@@ -1,12 +1,12 @@
 package com.pty4j.windows.conpty;
 
-import com.sun.jna.Library;
-import com.sun.jna.Memory;
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
-import com.sun.jna.platform.win32.Kernel32;
-import com.sun.jna.platform.win32.WinDef;
-import com.sun.jna.win32.W32APIOptions;
+import static com.pty4j.Native.err;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+
+import com.pty4j.windows.Kernel32;
 
 public class ConsoleProcessListChildProcessMain {
   static final String PREFIX = "Process list count: ";
@@ -24,29 +24,24 @@ public class ConsoleProcessListChildProcessMain {
       System.err.println("Cannot parse pid from " + args[0]);
       return;
     }
-    if (!Kernel32.INSTANCE.FreeConsole()) {
+    if (err(Kernel32.FreeConsole())) {
       System.err.println(LastErrorExceptionEx.getErrorMessage("FreeConsole"));
       return;
     }
-    if (!Kernel32.INSTANCE.AttachConsole(pid)) {
+    if (err(Kernel32.AttachConsole(pid))) {
       System.err.println(LastErrorExceptionEx.getErrorMessage("AttachConsole"));
       return;
     }
     int MAX_COUNT = 64;
-    Pointer buffer = new Memory(WinDef.DWORD.SIZE * MAX_COUNT);
-    WinDef.DWORD result = MyConsoleLibrary.INSTANCE.GetConsoleProcessList(buffer, new WinDef.DWORD(MAX_COUNT));
-    int count = result.intValue();
-    if (count == 0) {
-      System.err.println(LastErrorExceptionEx.getErrorMessage("GetConsoleProcessList"));
-      return;
+
+    try (var offHeap = Arena.ofConfined()) {
+    	MemorySegment buffer = offHeap.allocate(ValueLayout.JAVA_INT.byteSize() * MAX_COUNT);
+    	int count = Kernel32.GetConsoleProcessList(buffer, MAX_COUNT);
+        if (count == 0) {
+          System.err.println(LastErrorExceptionEx.getErrorMessage("GetConsoleProcessList"));
+          return;
+        }
+        System.out.println(PREFIX + count + SUFFIX);
     }
-    System.out.println(PREFIX + count + SUFFIX);
-  }
-
-
-  private interface MyConsoleLibrary extends Library {
-    MyConsoleLibrary INSTANCE = Native.load("kernel32", MyConsoleLibrary.class, W32APIOptions.DEFAULT_OPTIONS);
-
-    WinDef.DWORD GetConsoleProcessList(Pointer processList, WinDef.DWORD maxProcessCount);
   }
 }

@@ -3,3 +3,8 @@ build
 .idea/
 out/
 pty4j.iml
+/.settings/
+/bin/
+/target/
+/.classpath
+/.project

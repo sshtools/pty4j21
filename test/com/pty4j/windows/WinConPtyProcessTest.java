@@ -1,14 +1,7 @@
 package com.pty4j.windows;
 
-import com.pty4j.*;
-import com.pty4j.windows.conpty.WinConPtyProcess;
-import com.sun.jna.Platform;
-import org.jetbrains.annotations.NotNull;
-import org.junit.*;
-import testData.ConsoleSizeReporter;
-import testData.EnvPrinter;
-import testData.Printer;
-import testData.PromptReader;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,8 +12,25 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import org.jetbrains.annotations.NotNull;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Assume;
+import org.junit.Before;
+import org.junit.Test;
+
+import com.pty4j.Platform;
+import com.pty4j.PtyProcess;
+import com.pty4j.PtyProcessBuilder;
+import com.pty4j.PtyTest;
+import com.pty4j.TestUtil;
+import com.pty4j.WinSize;
+import com.pty4j.windows.conpty.WinConPtyProcess;
+
+import testData.ConsoleSizeReporter;
+import testData.EnvPrinter;
+import testData.Printer;
+import testData.PromptReader;
 
 @SuppressWarnings("TextBlockMigration")
 public class WinConPtyProcessTest {

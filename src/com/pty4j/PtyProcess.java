@@ -1,10 +1,11 @@
 package com.pty4j;
 
-import org.jetbrains.annotations.NotNull;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Optional;
+
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Process with pseudo-terminal(PTY).
@@ -35,8 +36,16 @@ public abstract class PtyProcess extends Process {
   public boolean isConsoleMode() {
     return false;
   }
+  
+  public Optional<String> getDisplayName() {
+	  return Optional.empty();
+  }
 
-  /**
+  public PtyInputStream getPtyInputStream() {
+	return (PtyInputStream)getInputStream();
+  }
+
+/**
    * @deprecated use {@link #isAlive()} instead
    */
   @Deprecated

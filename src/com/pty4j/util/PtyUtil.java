@@ -1,11 +1,12 @@
 package com.pty4j.util;
 
-import com.sun.jna.Platform;
+import java.io.File;
+import java.util.Map;
+
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
-import java.util.Map;
+import com.pty4j.Platform;
 
 /**
  * @author traff
@@ -45,11 +46,11 @@ public class PtyUtil {
   }
 
   static @NotNull String getNativeLibraryOsArchSubPath() {
-    int osType = Platform.getOSType();
-    String arch = Platform.ARCH;
-    if (osType == Platform.WINDOWS) {
-      return "win/" + arch;
-    }
+	int osType = Platform.getOSType();
+	String arch = Platform.ARCH;
+	if (osType == Platform.WINDOWS) {
+	  return "win/" + arch;
+	}
     if (osType == Platform.MAC) {
       return "darwin";
     }

@@ -1,22 +1,22 @@
 package com.pty4j;
 
+import java.io.File;
+import java.io.IOException;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.util.Map;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
 import com.pty4j.unix.UnixPtyProcess;
 import com.pty4j.windows.conpty.WinConPtyProcess;
 import com.pty4j.windows.cygwin.CygwinPtyProcess;
 import com.pty4j.windows.winpty.WinPtyProcess;
-import com.sun.jna.Platform;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.Map;
 
 public class PtyProcessBuilder {
 
-  private static final Logger LOG = LoggerFactory.getLogger(PtyProcessBuilder.class);
+  private static final Logger LOG = System.getLogger(PtyProcessBuilder.class.getName());
 
   private String[] myCommand;
   private Map<String, String> myEnvironment;
@@ -139,7 +139,7 @@ public class PtyProcessBuilder {
           return new WinConPtyProcess(options);
         }
         catch (UnsatisfiedLinkError e) {
-          LOG.info("Cannot create ConPTY process, fallback to winpty", e);
+          LOG.log(Level.WARNING, "Cannot create ConPTY process, fallback to winpty", e);
         }
       }
       return new WinPtyProcess(options, myConsole);

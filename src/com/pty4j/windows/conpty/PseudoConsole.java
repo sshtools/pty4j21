@@ -1,41 +1,45 @@
 package com.pty4j.windows.conpty;
 
-import com.pty4j.WinSize;
-import com.sun.jna.platform.win32.WinDef;
-import com.sun.jna.platform.win32.WinError;
-import com.sun.jna.platform.win32.WinNT;
+import java.io.IOException;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+
 import org.jetbrains.annotations.NotNull;
 
-import java.io.IOException;
+import com.pty4j.Native;
+import com.pty4j.WinSize;
+import com.pty4j.windows.Kernel32;
 
 final class PseudoConsole {
 
-  private final WinEx.HPCON hpc;
+  private final MemorySegment hpc;
   private WinSize myLastWinSize;
   private boolean myClosed = false;
+  private Arena mem;
 
-  private static WinEx.COORDByValue getSizeCoords(@NotNull WinSize size) {
-    WinEx.COORDByValue sizeCoords = new WinEx.COORDByValue();
-    sizeCoords.X = (short) size.getColumns();
-    sizeCoords.Y = (short) size.getRows();
+  private static MemorySegment getSizeCoords(Arena mem, @NotNull WinSize size) {
+	  MemorySegment sizeCoords = mem.allocate(ConPtyLibrary._COORD.layout());
+	  ConPtyLibrary._COORD.X(sizeCoords, (short) size.getColumns());
+	  ConPtyLibrary._COORD.Y(sizeCoords, (short) size.getRows());
     return sizeCoords;
   }
 
-  public PseudoConsole(WinSize size, WinNT.HANDLE input, WinNT.HANDLE output) throws LastErrorExceptionEx {
-    WinEx.HPCONByReference hpcByReference = new WinEx.HPCONByReference();
-    if (!ConPtyLibrary.getInstance().CreatePseudoConsole(getSizeCoords(size), input, output, new WinDef.DWORD(0L), hpcByReference).equals(WinError.S_OK)) {
+  public PseudoConsole(WinSize size, MemorySegment input, MemorySegment output) throws LastErrorExceptionEx {
+	mem = Arena.ofAuto();
+	MemorySegment hpcByReference = mem.allocate(Native.C_POINTER);
+    if (ConPtyLibrary.CreatePseudoConsole(getSizeCoords(mem, size), input, output, 0, hpcByReference) != Kernel32.S_OK) {
       throw new LastErrorExceptionEx("CreatePseudoConsole");
     }
-    hpc = hpcByReference.getValue();
+    hpc = hpcByReference.get(Native.C_POINTER, 0);
     myLastWinSize = size;
   }
 
-  public WinEx.HPCON getHandle() {
+  public MemorySegment getHandle() {
     return hpc;
   }
 
   public void resize(@NotNull WinSize newSize) throws IOException {
-    if (!ConPtyLibrary.getInstance().ResizePseudoConsole(hpc, getSizeCoords(newSize)).equals(WinError.S_OK)) {
+    if (ConPtyLibrary.ResizePseudoConsole(hpc, getSizeCoords(mem, newSize)) != Kernel32.S_OK) {
       throw new LastErrorExceptionEx("ResizePseudoConsole");
     }
     myLastWinSize = newSize;
@@ -51,7 +55,7 @@ final class PseudoConsole {
   public void close() {
     if (!myClosed) {
       myClosed = true;
-      ConPtyLibrary.getInstance().ClosePseudoConsole(hpc);
+      ConPtyLibrary.ClosePseudoConsole(hpc);
     }
   }
 }

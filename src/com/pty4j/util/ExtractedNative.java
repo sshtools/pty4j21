@@ -1,27 +1,34 @@
 package com.pty4j.util;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
 class ExtractedNative {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ExtractedNative.class);
+  private static final Logger LOG = System.getLogger(ExtractedNative.class.getName());
+  
   static final String[] LOCATIONS = {
       "darwin/libpty.dylib",
       "freebsd/x86/libpty.so",
@@ -46,7 +53,8 @@ class ExtractedNative {
       "win/x86-64/winpty-agent.exe",
       "win/x86-64/winpty.dll"
   };
-  static final String DEFAULT_RESOURCE_NAME_PREFIX = "resources/com/pty4j/native/";
+  //static final String DEFAULT_RESOURCE_NAME_PREFIX = "resources/com/pty4j/native/";
+  static final String DEFAULT_RESOURCE_NAME_PREFIX = "";
 
   private static final ExtractedNative INSTANCE = new ExtractedNative();
   private String myResourceOsArchSubPath;
@@ -94,15 +102,15 @@ class ExtractedNative {
   private void doInit() throws IOException {
     long startTimeNano = System.nanoTime();
     Path destDir = getOrCreateDestDir();
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Found " + destDir + " in " + pastTime(startTimeNano));
+    if (LOG.isLoggable(Level.DEBUG)) {
+      LOG.log(Level.DEBUG, "Found {0} in {1}", destDir, pastTime(startTimeNano));
     }
     List<Path> children;
     try (Stream<Path> stream = Files.list(destDir)) {
       children = stream.collect(Collectors.<Path>toList());
     }
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Listed files in " + pastTime(startTimeNano));
+    if (LOG.isLoggable(Level.DEBUG)) {
+      LOG.log(Level.DEBUG,"Listed files in {0}", pastTime(startTimeNano));
     }
     Map<String, Path> resourceToFileMap = new HashMap<>();
     for (Path child : children) {
@@ -111,25 +119,25 @@ class ExtractedNative {
     }
     Set<String> bundledResourceNames = getBundledResourceNames();
     boolean upToDate = isUpToDate(bundledResourceNames, resourceToFileMap);
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Checked upToDate in " + pastTime(startTimeNano));
+    if (LOG.isLoggable(Level.DEBUG)) {
+      LOG.log(Level.DEBUG, "Checked upToDate in {0}", pastTime(startTimeNano));
     }
     if (!upToDate) {
       for (Path child : children) {
         Files.delete(child);
       }
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Cleared directory in " + pastTime(startTimeNano));
+      if (LOG.isLoggable(Level.DEBUG)) {
+    	LOG.log(Level.DEBUG, "Cleared directory in {0}", pastTime(startTimeNano));
       }
       for (String bundledResourceName : bundledResourceNames) {
         copy(bundledResourceName, destDir);
       }
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Copied " + bundledResourceNames + " in " + pastTime(startTimeNano));
+      if (LOG.isLoggable(Level.DEBUG)) {
+    	  LOG.log(Level.DEBUG, "Copied {0} in {1}",  bundledResourceNames, pastTime(startTimeNano));
       }
     }
     myDestDir = destDir.toFile();
-    LOG.info("Extracted pty4j native in " + pastTime(startTimeNano));
+    LOG.log(Level.INFO, "Extracted pty4j native in {0}", pastTime(startTimeNano));
   }
 
   @NotNull
@@ -171,7 +179,7 @@ class ExtractedNative {
           return false;
         }
       } catch (Exception e) {
-        LOG.error("Cannot compare md5 checksums", e);
+    	LOG.log(Level.ERROR, "Cannot compare md5 checksums", e);
         return false;
       }
     }
@@ -191,7 +199,7 @@ class ExtractedNative {
       try {
         in.close();
       } catch (IOException e) {
-        LOG.error("Cannot close", e);
+        LOG.log(Level.ERROR, "Cannot close", e);
       }
     }
   }
@@ -209,7 +217,7 @@ class ExtractedNative {
   }
 
   private @NotNull String getResourceName(@NotNull String fileName) {
-    return myResourceNamePrefix + myResourceOsArchSubPath + "/" + fileName;
+    return ( myResourceNamePrefix == null ? "" : myResourceNamePrefix ) + myResourceOsArchSubPath + "/" + fileName;
   }
 
   private void copy(@NotNull String resourceName, @NotNull Path destDir) throws IOException {

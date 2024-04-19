@@ -1,14 +1,5 @@
 package com.pty4j;
 
-import com.pty4j.util.PtyUtil;
-import com.sun.jna.Platform;
-import com.sun.jna.platform.win32.Kernel32;
-import jtermios.JTermios;
-import kotlin.KotlinVersion;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
@@ -21,6 +12,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import com.pty4j.util.PtyUtil;
 
 /**
  * @author traff
@@ -39,10 +35,10 @@ public class TestUtil {
   public static String[] getJavaCommand(@NotNull Class<?> aClass, String... args) {
     List<String> result = new ArrayList<>();
     result.add(getJavaExecutablePath());
+    result.add("--enable-preview");
+    result.add("--enable-native-access=com.sshtools.pty4j");
     result.add("-cp");
-    result.add(getJarPathForClasses(aClass, WinSize.class, Logger.class, JTermios.class,
-                                    Platform.class, Kernel32.class,
-                                    KotlinVersion.class /* kotlin-stdlib.jar */));
+    result.add(getJarPathForClasses(aClass, WinSize.class, Platform.class));
     result.add(aClass.getName());
     result.addAll(Arrays.asList(args));
     return result.toArray(new String[0]);

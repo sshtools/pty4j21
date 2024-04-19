@@ -1,6 +1,5 @@
 package com.pty4j.util;
 
-import kotlin.Pair;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.Callable;

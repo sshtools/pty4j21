@@ -20,64 +20,27 @@
  */
 package com.pty4j.unix.linux;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentAllocator;
+import java.lang.foreign.SequenceLayout;
+import java.lang.foreign.ValueLayout;
+
+import com.pty4j.unix.LibC;
+import com.pty4j.unix.LibUtil;
 import com.pty4j.unix.PtyHelpers;
-import com.sun.jna.Library;
-import com.sun.jna.Native;
-import com.sun.jna.ptr.IntByReference;
-import jtermios.JTermios;
+import com.pty4j.unix.PtyHelpers.FDSet;
 
 /**
  * Provides a {@link com.pty4j.unix.PtyHelpers.OSFacade} implementation for Linux.
  */
 public class OSFacadeImpl implements PtyHelpers.OSFacade {
-  // INNER TYPES
-
-  private interface C_lib extends Library {
-    int kill(int pid, int signal);
-
-    int waitpid(int pid, int[] stat, int options);
-
-    int sigprocmask(int how, IntByReference set, IntByReference oldset);
-
-    String strerror(int errno);
-
-    int grantpt(int fdm);
-
-    int unlockpt(int fdm);
-
-    int close(int fd);
-
-    String ptsname(int fd);
-
-    int open(String pts_name, int o_rdwr);
-
-    int killpg(int pid, int sig);
-
-    int fork();
-
-    int setsid();
-
-    int getpid();
-
-    int setpgid(int pid, int pgid);
-
-    void dup2(int fd, int fileno);
-
-    int getppid();
-
-    void unsetenv(String s);
-
-    void chdir(String dirpath);
-  }
-
-  public interface Linux_Util_lib extends Library {
-    int login_tty(int fd);
-  }
-
-  private static final C_lib m_Clib = Native.loadLibrary("c", C_lib.class);
-
-  private static final Linux_Util_lib m_Utillib = Native.loadLibrary("util", Linux_Util_lib.class);
-
+  
+  private final static int NFBBITS = (int)ValueLayout.JAVA_LONG.byteSize() * 8;
+  private final static int FD_COUNT = 1024;
+  private final static SequenceLayout FD_ARRAY_LAYOUT = MemoryLayout.sequenceLayout((FD_COUNT + NFBBITS - 1) / NFBBITS, ValueLayout.JAVA_LONG); /* TODO const */
+	 
   // CONSTUCTORS
 
   /**
@@ -101,102 +64,15 @@ public class OSFacadeImpl implements PtyHelpers.OSFacade {
   // METHODS
 
   @Override
-  public int kill(int pid, int signal) {
-    return m_Clib.kill(pid, signal);
-  }
-
-  @Override
-  public int waitpid(int pid, int[] stat, int options) {
-    return m_Clib.waitpid(pid, stat, options);
-  }
-
-  @Override
-  public int sigprocmask(int how, IntByReference set, IntByReference oldset) {
-    return m_Clib.sigprocmask(how, set, oldset);
-  }
-
-  @Override
-  public String strerror(int errno) {
-    return m_Clib.strerror(errno);
-  }
-
-  @Override
   public int getpt() {
-    return JTermios.open("/dev/ptmx", JTermios.O_RDWR | JTermios.O_NOCTTY);
-  }
-
-  @Override
-  public int grantpt(int fd) {
-    return m_Clib.grantpt(fd);
-  }
-
-  @Override
-  public int unlockpt(int fd) {
-    return m_Clib.unlockpt(fd);
-  }
-
-  @Override
-  public int close(int fd) {
-    return m_Clib.close(fd);
-  }
-
-  @Override
-  public String ptsname(int fd) {
-    return m_Clib.ptsname(fd);
-  }
-
-  @Override
-  public int killpg(int pid, int sig) {
-    return m_Clib.killpg(pid, sig);
-  }
-
-  @Override
-  public int fork() {
-    return m_Clib.fork();
-  }
-
-  @Override
-  public int pipe(int[] pipe2) {
-    return JTermios.pipe(pipe2);
-  }
-
-  @Override
-  public int setsid() {
-    return m_Clib.setsid();
-  }
-
-  @Override
-  public int getpid() {
-    return m_Clib.getpid();
-  }
-
-  @Override
-  public int setpgid(int pid, int pgid) {
-    return m_Clib.setpgid(pid, pgid);
-  }
-
-  @Override
-  public void dup2(int fds, int fileno) {
-    m_Clib.dup2(fds, fileno);
-  }
-
-  @Override
-  public int getppid() {
-    return m_Clib.getppid();
-  }
-
-  @Override
-  public void unsetenv(String s) {
-    m_Clib.unsetenv(s);
+    try (var offHeap = Arena.ofConfined()) {
+	  return LibC.open(Arena.global().allocateUtf8String("/dev/ptmx"), LibC.O_RDWR | LibC.O_NOCTTY);
+    }
   }
 
   @Override
   public int login_tty(int fd) {
-    return m_Utillib.login_tty(fd);
+    return LibUtil.login_tty(fd);
   }
 
-  @Override
-  public void chdir(String dirpath) {
-    m_Clib.chdir(dirpath);
-  }
 }

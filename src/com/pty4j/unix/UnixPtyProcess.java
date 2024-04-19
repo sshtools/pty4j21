@@ -7,20 +7,23 @@
  */
 package com.pty4j.unix;
 
-import com.pty4j.PtyProcess;
-import com.pty4j.PtyProcessOptions;
-import com.pty4j.WinSize;
-import com.pty4j.util.PtyUtil;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import com.pty4j.PtyProcess;
+import com.pty4j.PtyProcessOptions;
+import com.pty4j.WinSize;
+import com.pty4j.util.PtyUtil;
 
 public class UnixPtyProcess extends PtyProcess {
+	  
   private static final int NOOP = 0;
   
   // Signals with portable numbers (https://en.wikipedia.org/wiki/Signal_(IPC)#POSIX_signals)
@@ -61,6 +64,12 @@ public class UnixPtyProcess extends PtyProcess {
     String dir = Objects.requireNonNullElse(options.getDirectory(), ".");
     execInPty(options.getCommand(), PtyUtil.toStringArray(options.getEnvironment()), dir, myPty, myErrPty,
       options.getInitialColumns(), options.getInitialRows());
+  }
+
+  @Override
+  public Optional<String> getDisplayName() {
+	var slaveName = myPty.getSlaveName();
+	return Optional.of(slaveName.startsWith("/dev/") ? slaveName.substring(5) : slaveName);
   }
 
   public Pty getPty() {

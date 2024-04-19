@@ -1,18 +1,17 @@
 package com.pty4j.windows.winpty;
 
-import com.pty4j.PtyProcess;
-import com.pty4j.PtyProcessOptions;
-import com.pty4j.WinSize;
-import com.sun.jna.platform.win32.Advapi32Util;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import com.pty4j.PtyProcess;
+import com.pty4j.PtyProcessOptions;
+import com.pty4j.WinSize;
 
 /**
  * @author traff
@@ -60,7 +59,16 @@ public class WinPtyProcess extends PtyProcess {
 
     @NotNull
     private static String convertEnvironment(@Nullable Map<String, String> environment) {
-        return Advapi32Util.getEnvironmentBlock(environment != null ? environment : Collections.<String, String>emptyMap());
+    	 StringBuilder out = new StringBuilder(environment == null ? 0 : environment.size() * 32 /* some guess about average name=value length*/);
+    	 if(environment != null) {
+	         for (Map.Entry<String, String> entry : environment.entrySet()) {
+	             String    key=entry.getKey(), value=entry.getValue();
+	             if (value != null) {
+	                 out.append(key).append("=").append(value).append('\0');
+	             }
+	         }
+    	 }
+         return out.append('\0').toString();
     }
 
     private WinPtyProcess(@NotNull String[] command,

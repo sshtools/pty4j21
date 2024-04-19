@@ -1,28 +1,30 @@
 package com.pty4j.windows.conpty;
 
-import com.sun.jna.Library;
-import com.sun.jna.platform.win32.WinDef;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-public class ConsoleProcessListFetcher {
-  private static final Logger LOG = LoggerFactory.getLogger(ConsoleProcessListFetcher.class);
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+public class ConsoleProcessListFetcher { 
+  private static final Logger LOG = System.getLogger(ConsoleProcessListFetcher.class.getName());
   private static final int TIMEOUT_MILLIS = 5000;
   private static final List<String> JAVA_OPTIONS_ENV_VARS = List.of("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS");
   private static final List<String> JNA_SYSTEM_PROPERTIES = List.of("jna.boot.library.path", "jna.nounpack");
@@ -39,7 +41,7 @@ public class ConsoleProcessListFetcher {
             "-Xms32m", "-Xmx64m"),
         formatInheritedSystemProperties(JNA_SYSTEM_PROPERTIES),
         List.of("-cp",
-            buildClasspath(ConsoleProcessListChildProcessMain.class, Library.class, WinDef.DWORD.class),
+            buildClasspath(ConsoleProcessListChildProcessMain.class),
             ConsoleProcessListChildProcessMain.class.getName(),
             String.valueOf(pid))
     ));
@@ -53,7 +55,7 @@ public class ConsoleProcessListFetcher {
     } catch (InterruptedException ignored) {
     }
     if (process.isAlive()) {
-      LOG.info("Terminating still running child process");
+      LOG.log(Level.INFO, "Terminating still running child process");
       process.destroy();
     }
     stdout.awaitReadingEnds();

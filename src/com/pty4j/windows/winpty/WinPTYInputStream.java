@@ -9,9 +9,10 @@ package com.pty4j.windows.winpty;
 
 
 import java.io.IOException;
-import java.io.InputStream;
 
-public class WinPTYInputStream extends InputStream {
+import com.pty4j.PtyInputStream;
+
+public class WinPTYInputStream extends PtyInputStream {
   private final WinPty myWinPty;
   private final NamedPipe myNamedPipe;
 

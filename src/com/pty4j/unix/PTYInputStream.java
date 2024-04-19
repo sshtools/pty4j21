@@ -9,9 +9,11 @@ package com.pty4j.unix;
 
 
 import java.io.IOException;
-import java.io.InputStream;
+import java.lang.foreign.MemorySegment;
 
-public class PTYInputStream extends InputStream {
+import com.pty4j.PtyInputStream;
+
+public class PTYInputStream extends PtyInputStream {
   Pty myPty;
 
   public PTYInputStream(Pty pty) {
@@ -30,6 +32,10 @@ public class PTYInputStream extends InputStream {
       return -1;
     }
     return b[0];
+  }
+   
+  public int fastRead(MemorySegment segment, int len) throws IOException {
+    return myPty.fastRead(segment, len);
   }
 
   @Override

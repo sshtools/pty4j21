@@ -1,32 +1,35 @@
 package com.pty4j.windows.conpty;
 
-import com.sun.jna.Native;
-import com.sun.jna.platform.win32.Kernel32;
-import com.sun.jna.platform.win32.WinError;
-import com.sun.jna.platform.win32.WinNT;
-import com.sun.jna.ptr.IntByReference;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static com.pty4j.Native.err;
+import static com.pty4j.Native.ok;
 
 import java.io.IOException;
-import java.io.InputStream;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-class WinHandleInputStream extends InputStream {
+import org.jetbrains.annotations.NotNull;
 
-  private static final Logger LOG = LoggerFactory.getLogger(WinHandleInputStream.class);
+import com.pty4j.PtyInputStream;
+import com.pty4j.windows.Kernel32;
 
-  private final WinNT.HANDLE myReadPipe;
+class WinHandleInputStream extends PtyInputStream {
+
+  private static final Logger LOG = System.getLogger(WinHandleInputStream.class.getName());
+
+  private final MemorySegment myReadPipe;
   private volatile boolean myClosed;
   private final ReentrantLock myLock = new ReentrantLock();
   private int myReadCount = 0; // guarded by myLock
   private final Condition myReadCountChanged = myLock.newCondition();
 
-  public WinHandleInputStream(@NotNull WinNT.HANDLE readPipe) {
+  public WinHandleInputStream(@NotNull MemorySegment readPipe) {
     myReadPipe = readPipe;
   }
 
@@ -54,35 +57,37 @@ class WinHandleInputStream extends InputStream {
     if (myClosed) {
       throw new IOException("Closed stdin");
     }
-    byte[] buffer = new byte[len];
-    IntByReference lpNumberOfBytesRead = new IntByReference(0);
-    boolean result = Kernel32.INSTANCE.ReadFile(myReadPipe, buffer, buffer.length, lpNumberOfBytesRead, null);
-    if (!result) {
-      int lastError = Native.getLastError();
-      if (lastError == WinError.ERROR_BROKEN_PIPE) {
-        // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile
-        // If an anonymous pipe is being used and the write handle has been closed,
-        // when ReadFile attempts to read using the pipe's corresponding read handle,
-        // the function returns FALSE and GetLastError returns ERROR_BROKEN_PIPE.
-        return -1;
-      }
-      throw new LastErrorExceptionEx("ReadFile stdin", lastError);
+    try(Arena mem = Arena.ofConfined()) {
+    	MemorySegment buffer = mem.allocate(len);
+	    MemorySegment lpNumberOfBytesRead = mem.allocate(ValueLayout.JAVA_INT);
+	    boolean result = ok(Kernel32.ReadFile(myReadPipe, buffer, len, lpNumberOfBytesRead, MemorySegment.NULL));
+	    if (!result) {
+	      int lastError = Kernel32.GetLastError();
+	      if (lastError == Kernel32.ERROR_BROKEN_PIPE) {
+	        // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile
+	        // If an anonymous pipe is being used and the write handle has been closed,
+	        // when ReadFile attempts to read using the pipe's corresponding read handle,
+	        // the function returns FALSE and GetLastError returns ERROR_BROKEN_PIPE.
+	        return -1;
+	      }
+	      throw new LastErrorExceptionEx("ReadFile stdin", lastError);
+	    }
+	    int bytesRead = lpNumberOfBytesRead.get(ValueLayout.JAVA_INT, 0);
+	    if (bytesRead == 0) {
+	      // If lpOverlapped is NULL, then when a synchronous read operation reaches the end of a file,
+	      // ReadFile returns TRUE and sets *lpNumberOfBytesRead to zero.
+	      return -1;
+	    }
+	    buffer.asByteBuffer().get(b, off, len);
+	    return bytesRead;
     }
-    int bytesRead = lpNumberOfBytesRead.getValue();
-    if (bytesRead == 0) {
-      // If lpOverlapped is NULL, then when a synchronous read operation reaches the end of a file,
-      // ReadFile returns TRUE and sets *lpNumberOfBytesRead to zero.
-      return -1;
-    }
-    System.arraycopy(buffer, 0, b, off, len);
-    return bytesRead;
   }
 
   @Override
   public void close() throws IOException {
     if (!myClosed) {
       myClosed = true;
-      if (!Kernel32.INSTANCE.CloseHandle(myReadPipe)) {
+      if (err(Kernel32.CloseHandle(myReadPipe))) {
         throw new LastErrorExceptionEx("CloseHandle stdin");
       }
     }
@@ -92,7 +97,7 @@ class WinHandleInputStream extends InputStream {
     myLock.lock();
     try {
       if (myReadCount == 0 && !myReadCountChanged.await(2000, TimeUnit.MILLISECONDS)) {
-        LOG.warn("Nobody called " + WinHandleInputStream.class.getName() + ".read after the process creation!");
+        LOG.log(Level.WARNING, "Nobody called {0}.read after the process creation!", WinHandleInputStream.class.getName());
         return;
       }
       long start = System.currentTimeMillis();

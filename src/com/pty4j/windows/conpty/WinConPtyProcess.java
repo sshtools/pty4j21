@@ -1,50 +1,54 @@
 package com.pty4j.windows.conpty;
 
-import com.pty4j.PtyProcess;
-import com.pty4j.PtyProcessOptions;
-import com.pty4j.WinSize;
-import com.pty4j.windows.WinHelper;
-import com.sun.jna.platform.win32.Kernel32;
-import com.sun.jna.platform.win32.WinBase;
-import com.sun.jna.ptr.IntByReference;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static com.pty4j.Native.err;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static com.sun.jna.platform.win32.WinBase.INFINITE;
+import org.jetbrains.annotations.NotNull;
+
+import com.pty4j.PtyProcess;
+import com.pty4j.PtyProcessOptions;
+import com.pty4j.WinSize;
+import com.pty4j.windows.Kernel32;
+import com.pty4j.windows.Kernel32.PROCESS_INFORMATION;
+import com.pty4j.windows.WinHelper;
 
 public final class WinConPtyProcess extends PtyProcess {
-
-  private static final Logger LOG = LoggerFactory.getLogger('#' + WinConPtyProcess.class.getName());
+  private static final Logger LOG = System.getLogger(WinConPtyProcess.class.getName());
 
   private final PseudoConsole pseudoConsole;
-  private final WinBase.PROCESS_INFORMATION processInformation;
+  private final MemorySegment processInformation;
   private final WinHandleInputStream myInputStream;
   private final WinHandleOutputStream myOutputStream;
   private final ExitCodeInfo myExitCodeInfo = new ExitCodeInfo();
   private final List<String> myCommand;
+  private final Arena mem;
 
   public WinConPtyProcess(@NotNull PtyProcessOptions options) throws IOException {
     myCommand = List.of(options.getCommand());
     checkExec(myCommand);
     Pipe inPipe = new Pipe();
     Pipe outPipe = new Pipe();
+    mem = Arena.ofShared();
     pseudoConsole = new PseudoConsole(getInitialSize(options), inPipe.getReadPipe(), outPipe.getWritePipe());
-    processInformation = ProcessUtils.startProcess(pseudoConsole, options.getCommand(), options.getDirectory(),
+    processInformation = ProcessUtils.startProcess(mem, pseudoConsole, options.getCommand(), options.getDirectory(),
             options.getEnvironment());
-    if (!Kernel32.INSTANCE.CloseHandle(inPipe.getReadPipe())) {
+    if (err(Kernel32.CloseHandle(inPipe.getReadPipe()))) {
       throw new LastErrorExceptionEx("CloseHandle stdin after process creation");
     }
-    if (!Kernel32.INSTANCE.CloseHandle(outPipe.getWritePipe())) {
+    if (err(Kernel32.CloseHandle(outPipe.getWritePipe()))) {
       throw new LastErrorExceptionEx("CloseHandle stdout after process creation");
     }
     myInputStream = new WinHandleInputStream(outPipe.getReadPipe());
@@ -72,20 +76,22 @@ public final class WinConPtyProcess extends PtyProcess {
   private void startAwaitingThread(@NotNull List<String> command) {
     String commandLine = String.join(" ", command);
     Thread t = new Thread(() -> {
-      int result = Kernel32.INSTANCE.WaitForSingleObject(processInformation.hProcess, INFINITE);
+      int result = Kernel32.WaitForSingleObject(PROCESS_INFORMATION.hProcess(processInformation), Kernel32.INFINITE);
       int exitCode = -100;
-      if (result == WinBase.WAIT_OBJECT_0) {
-        IntByReference exitCodeRef = new IntByReference();
-        if (!Kernel32.INSTANCE.GetExitCodeProcess(processInformation.hProcess, exitCodeRef)) {
-          LOG.info(LastErrorExceptionEx.getErrorMessage("GetExitCodeProcess(" + commandLine + ")"));
-        } else {
-          exitCode = exitCodeRef.getValue();
-        }
+      if (result == Kernel32.WAIT_OBJECT_0) {
+    	try(Arena lmem = Arena.ofConfined()) {
+	        MemorySegment exitCodeRef = lmem.allocate(ValueLayout.JAVA_INT);
+	        if (err(Kernel32.GetExitCodeProcess(PROCESS_INFORMATION.hProcess(processInformation), exitCodeRef))) {
+	          LOG.log(Level.INFO, "{0}", LastErrorExceptionEx.getErrorMessage("GetExitCodeProcess(" + commandLine + ")"));
+	        } else {
+	          exitCode = exitCodeRef.get(ValueLayout.JAVA_INT, 0);
+	        }
+    	}
       } else {
-        if (result == WinBase.WAIT_FAILED) {
-          LOG.info(LastErrorExceptionEx.getErrorMessage("WaitForSingleObject(" + commandLine + ")"));
+        if (result == Kernel32.WAIT_FAILED) {
+          LOG.log(Level.INFO, "{0}", LastErrorExceptionEx.getErrorMessage("WaitForSingleObject(" + commandLine + ")"));
         } else {
-          LOG.info("WaitForSingleObject(" + commandLine + ") returned " + result);
+          LOG.log(Level.INFO, "WaitForSingleObject({0}) returned {1}", commandLine, result);
         }
       }
       myExitCodeInfo.setExitCode(exitCode);
@@ -112,7 +118,7 @@ public final class WinConPtyProcess extends PtyProcess {
 
   @Override
   public long pid() {
-    return processInformation.dwProcessId.longValue();
+    return PROCESS_INFORMATION.dwProcessId(processInformation);
   }
 
   @Override
@@ -127,7 +133,7 @@ public final class WinConPtyProcess extends PtyProcess {
 
   @Override
   public InputStream getErrorStream() {
-    return NullInputStream.INSTANCE;
+    return InputStream.nullInputStream();
   }
 
   @Override
@@ -164,9 +170,9 @@ public final class WinConPtyProcess extends PtyProcess {
     if (!isAlive()) {
       return;
     }
-    if (!Kernel32.INSTANCE.TerminateProcess(processInformation.hProcess, 1)) {
-      LOG.info("Failed to terminate process with pid " + processInformation.dwProcessId + ". "
-          + LastErrorExceptionEx.getErrorMessage("TerminateProcess"));
+    if (err(Kernel32.TerminateProcess(PROCESS_INFORMATION.hProcess(processInformation), 1))) {
+      LOG.log(Level.INFO, "Failed to terminate process with pid {0}. {1}", PROCESS_INFORMATION.dwProcessId(processInformation),
+          LastErrorExceptionEx.getErrorMessage("TerminateProcess"));
     }
   }
 
@@ -179,22 +185,27 @@ public final class WinConPtyProcess extends PtyProcess {
   }
 
   private void cleanup() {
-    try {
-      ProcessUtils.closeHandles(processInformation);
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
-    pseudoConsole.close();
-    try {
-      myInputStream.close();
-    } catch (IOException e) {
-      LOG.info("Cannot close input stream", e);
-    }
-    try {
-      myOutputStream.close();
-    } catch (IOException e) {
-      LOG.info("Cannot close output stream", e);
-    }
+	try {
+	    try {
+	      ProcessUtils.closeHandles(processInformation);
+	    } catch (IOException e) {
+	      e.printStackTrace();
+	    }
+	    pseudoConsole.close();
+	    try {
+	      myInputStream.close();
+	    } catch (IOException e) {
+	      LOG.log(Level.WARNING, "Cannot close input stream", e);
+	    }
+	    try {
+	      myOutputStream.close();
+	    } catch (IOException e) {
+	    	LOG.log(Level.WARNING,"Cannot close output stream", e);
+	    }
+	}
+	finally {
+		mem.close();
+	}
   }
 
   private static class ExitCodeInfo {

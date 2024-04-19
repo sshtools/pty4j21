@@ -1,21 +1,23 @@
 package com.pty4j.windows.cygwin;
 
-import com.pty4j.PtyProcess;
-import com.pty4j.WinSize;
-import com.pty4j.util.PtyUtil;
-import com.pty4j.windows.winpty.NamedPipe;
-import com.sun.jna.platform.win32.Kernel32;
-import com.sun.jna.platform.win32.WinBase;
-import com.sun.jna.platform.win32.WinError;
-import com.sun.jna.platform.win32.WinNT;
-import org.jetbrains.annotations.NotNull;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.jetbrains.annotations.NotNull;
+
+import com.pty4j.Native;
+import com.pty4j.PtyProcess;
+import com.pty4j.WinSize;
+import com.pty4j.util.PtyUtil;
+import com.pty4j.windows.Kernel32;
+import com.pty4j.windows.Kernel32.OVERLAPPED;
+import com.pty4j.windows.winpty.NamedPipe;
 
 public class CygwinPtyProcess extends PtyProcess {
   private static final int CONNECT_PIPE_TIMEOUT = 1000;
@@ -29,29 +31,32 @@ public class CygwinPtyProcess extends PtyProcess {
   private final NamedPipe myInputPipe;
   private final NamedPipe myOutputPipe;
   private final NamedPipe myErrorPipe;
-  private final WinNT.HANDLE myInputHandle;
-  private final WinNT.HANDLE myOutputHandle;
-  private final WinNT.HANDLE myErrorHandle;
+  private final MemorySegment myInputHandle;
+  private final MemorySegment myOutputHandle;
+  private final MemorySegment myErrorHandle;
   private final boolean myConsoleMode;
 
   public CygwinPtyProcess(String[] command, Map<String, String> environment, String workingDirectory, File logFile, boolean console)
     throws IOException {
     myConsoleMode = console;
-    String pipePrefix = String.format("\\\\.\\pipe\\cygwinpty-%d-%d-", Kernel32.INSTANCE.GetCurrentProcessId(), processCounter.getAndIncrement());
+    int procNo = processCounter.getAndIncrement(); 
+    String pipePrefix = String.format("\\\\.\\pipe\\cygwinpty-%d-%d-", Kernel32.GetCurrentProcessId(), procNo);
     String inPipeName = pipePrefix + "in";
     String outPipeName = pipePrefix + "out";
     String errPipeName = pipePrefix + "err";
 
-    myInputHandle = CygwinKernel32.INSTANCE.CreateNamedPipeA(inPipeName, PIPE_ACCESS_OUTBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null);
-    myOutputHandle = CygwinKernel32.INSTANCE.CreateNamedPipeA(outPipeName, PIPE_ACCESS_INBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null);
-    myErrorHandle =
-      console ? CygwinKernel32.INSTANCE.CreateNamedPipeA(errPipeName, PIPE_ACCESS_INBOUND | WinNT.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, null) : null;
-
-    if (myInputHandle == WinBase.INVALID_HANDLE_VALUE ||
-        myOutputHandle == WinBase.INVALID_HANDLE_VALUE ||
-        myErrorHandle == WinBase.INVALID_HANDLE_VALUE) {
-      closeHandles();
-      throw new IOException("Unable to create a named pipe");
+    try(Arena mem = Arena.ofConfined()) {
+	    myInputHandle = Kernel32.CreateNamedPipeA(mem.allocateUtf8String(inPipeName), PIPE_ACCESS_OUTBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL);
+	    myOutputHandle = Kernel32.CreateNamedPipeA(mem.allocateUtf8String(outPipeName), PIPE_ACCESS_INBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL);
+	    myErrorHandle =
+	      console ? Kernel32.CreateNamedPipeA(mem.allocateUtf8String(errPipeName), PIPE_ACCESS_INBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL) : null;
+	
+	    if (myInputHandle.equals(Kernel32.INVALID_HANDLE_VALUE) ||
+	        myOutputHandle.equals(Kernel32.INVALID_HANDLE_VALUE) ||
+	        (console && myErrorHandle.equals(Kernel32.INVALID_HANDLE_VALUE))) {
+	      closeHandles();
+	      throw new IOException("Unable to create a named pipe");
+	    }
     }
 
     myInputPipe = new NamedPipe(myInputHandle, false);
@@ -121,35 +126,36 @@ public class CygwinPtyProcess extends PtyProcess {
     return process;
   }
 
-  private static void waitForPipe(WinNT.HANDLE handle) throws IOException {
-    WinNT.HANDLE connectEvent = CygwinKernel32.INSTANCE.CreateEventA(null, true, false, null);
+  private static void waitForPipe(MemorySegment handle) throws IOException {
+    MemorySegment connectEvent = Kernel32.CreateEventA(MemorySegment.NULL, Native.TRUE, Native.FALSE, MemorySegment.NULL);
 
-    WinBase.OVERLAPPED povl = new WinBase.OVERLAPPED();
-    povl.hEvent = connectEvent;
-
-    boolean success = Kernel32.INSTANCE.ConnectNamedPipe(handle, povl);
-    if (!success) {
-      switch (Kernel32.INSTANCE.GetLastError()) {
-        case WinError.ERROR_PIPE_CONNECTED:
-          success = true;
-          break;
-        case WinError.ERROR_IO_PENDING:
-          if (Kernel32.INSTANCE.WaitForSingleObject(connectEvent, CONNECT_PIPE_TIMEOUT) != WinBase.WAIT_OBJECT_0) {
-            CygwinKernel32.INSTANCE.CancelIo(handle);
-
-            success = false;
-          }
-          else {
-            success = true;
-          }
-
-          break;
-      }
+    try(Arena mem = Arena.ofConfined()) {
+    	MemorySegment povl = mem.allocate(OVERLAPPED.layout());
+    	OVERLAPPED.hEvent(povl, connectEvent);
+	
+	    boolean success = Kernel32.ConnectNamedPipe(handle, povl) != 0;
+	    if (!success) {
+	      switch (Kernel32.GetLastError()) {
+	        case Kernel32.ERROR_PIPE_CONNECTED:
+	          success = true;
+	          break;
+	        case Kernel32.ERROR_IO_PENDING:
+	          if (Kernel32.WaitForSingleObject(connectEvent, CONNECT_PIPE_TIMEOUT) != Kernel32.WAIT_OBJECT_0) {
+	            Kernel32.CancelIo(handle);
+	
+	            success = false;
+	          }
+	          else {
+	            success = true;
+	          }
+	          break;
+	      }
+	    }
+	
+	    Kernel32.CloseHandle(connectEvent);
+	
+	    if (!success) throw new IOException("Cannot connect to a named pipe");
     }
-
-    Kernel32.INSTANCE.CloseHandle(connectEvent);
-
-    if (!success) throw new IOException("Cannot connect to a named pipe");
   }
 
   @Override
@@ -216,9 +222,9 @@ public class CygwinPtyProcess extends PtyProcess {
   }
 
   private void closeHandles() {
-    Kernel32.INSTANCE.CloseHandle(myInputHandle);
-    Kernel32.INSTANCE.CloseHandle(myOutputHandle);
-    if (myErrorHandle != null) Kernel32.INSTANCE.CloseHandle(myErrorHandle);
+    Kernel32.CloseHandle(myInputHandle);
+    Kernel32.CloseHandle(myOutputHandle);
+    if (myErrorHandle != null) Kernel32.CloseHandle(myErrorHandle);
   }
 
   private void closePipes() {

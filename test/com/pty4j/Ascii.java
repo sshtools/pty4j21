@@ -1,27 +1,25 @@
-package com.pty4j
+package com.pty4j;
 
-internal object Ascii {
-
+public class Ascii {
   /**
    * End of Text: A communication control character used to terminate a sequence of characters
    * started with STX and transmitted as an entity.
    */
-  const val ETX: Byte = 3
+  public final static byte ETX = 3;
 
-  const val ETX_CHAR: Char = ETX.toInt().toChar()
+  public final static char ETX_CHAR = (char)ETX;
 
   /**
    * Bell ('\a'): A character for use when there is a need to call for human attention. It may
    * control alarm or attention devices.
    */
-  const val BEL: Byte = 7
+  public final static byte BEL = 7;
 
-  const val BEL_CHAR: Char = BEL.toInt().toChar()
+  public final static char BEL_CHAR = (char)BEL;
 
   /**
    * Backspace ('\b'): A format effector which controls the movement of the printing position one
    * printing space backward on the same printing line. (Applicable also to display devices.)
    */
-  const val BS: Byte = 8
-
+  public final static byte BS = 8;
 }

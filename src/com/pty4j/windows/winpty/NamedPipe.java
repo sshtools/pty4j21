@@ -1,66 +1,85 @@
 package com.pty4j.windows.winpty;
 
-import com.sun.jna.Memory;
-import com.sun.jna.Native;
-import com.sun.jna.platform.win32.Kernel32;
-import com.sun.jna.platform.win32.WinNT;
-import com.sun.jna.ptr.IntByReference;
+import static com.pty4j.Native.err;
+import static com.pty4j.Native.ok;
 
 import java.io.IOException;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static com.pty4j.windows.winpty.WinPty.KERNEL32;
-import static com.sun.jna.platform.win32.WinBase.INVALID_HANDLE_VALUE;
+import com.pty4j.Native;
+import com.pty4j.windows.Kernel32;
+import com.pty4j.windows.Kernel32.OVERLAPPED;
 
 public class NamedPipe {
-  private WinNT.HANDLE myHandle;
+  private MemorySegment myHandle;
   boolean myCloseHandleOnFinalize;
 
-  private WinNT.HANDLE shutdownEvent;
+  private MemorySegment shutdownEvent;
   private volatile boolean shutdownFlag = false;
   private volatile boolean myFinalizedFlag = false;
 
   private ReentrantLock readLock = new ReentrantLock();
   private ReentrantLock writeLock = new ReentrantLock();
 
-  private Memory readBuffer = new Memory(16 * 1024);
-  private Memory writeBuffer = new Memory(16 * 1024);
+  private MemorySegment readBuffer;
+  private MemorySegment writeBuffer;
 
-  private WinNT.HANDLE readEvent;
-  private WinNT.HANDLE writeEvent;
+  private MemorySegment readEvent;
+  private MemorySegment writeEvent;
 
-  private WinNT.HANDLE[] readWaitHandles;
-  private WinNT.HANDLE[] writeWaitHandles;
+  private MemorySegment readWaitHandles;
+  private MemorySegment writeWaitHandles;
 
-  private IntByReference readActual = new IntByReference();
-  private IntByReference writeActual = new IntByReference();
-  private IntByReference peekActual = new IntByReference();
+  private final MemorySegment readActual;
+  private final MemorySegment writeActual;
+  private final MemorySegment peekActual;
 
-  private WinNT.OVERLAPPED readOver = new WinNT.OVERLAPPED();
-  private WinNT.OVERLAPPED writeOver = new WinNT.OVERLAPPED();
+  private MemorySegment readOver;
+  private MemorySegment writeOver;
+  
+  private final Arena mem;
 
   /**
    * The NamedPipe object closes the given handle when it is closed.  If you
    * do not own the handle, call markClosed instead of close, or call the Win32
    * DuplicateHandle API to get a new handle.
    */
-  public NamedPipe(WinNT.HANDLE handle, boolean closeHandleOnFinalize) {
+  public NamedPipe(MemorySegment handle, boolean closeHandleOnFinalize) {
+	mem = Arena.ofShared();
+	readOver = mem.allocate(Kernel32.OVERLAPPED.layout());
+	writeOver = mem.allocate(Kernel32.OVERLAPPED.layout());
+	readActual = mem.allocate(ValueLayout.JAVA_INT);
+	writeActual = mem.allocate(ValueLayout.JAVA_INT);
+	peekActual = mem.allocate(ValueLayout.JAVA_INT);
+	readBuffer = mem.allocate(16 * 1024);
+	writeBuffer = mem.allocate(16 * 1024);
     myHandle = handle;
     myCloseHandleOnFinalize = closeHandleOnFinalize;
-    shutdownEvent = Kernel32.INSTANCE.CreateEvent(null, true, false, null);
-    readEvent = Kernel32.INSTANCE.CreateEvent(null, true, false, null);
-    writeEvent = Kernel32.INSTANCE.CreateEvent(null, true, false, null);
-    readWaitHandles = new WinNT.HANDLE[] { readEvent, shutdownEvent };
-    writeWaitHandles = new WinNT.HANDLE[] { writeEvent, shutdownEvent };
+    shutdownEvent = Kernel32.CreateEvent(MemorySegment.NULL, Native.TRUE, Native.FALSE, MemorySegment.NULL);
+    readEvent = Kernel32.CreateEvent(MemorySegment.NULL, Native.TRUE, Native.FALSE, MemorySegment.NULL);
+    writeEvent = Kernel32.CreateEvent(MemorySegment.NULL, Native.TRUE, Native.FALSE, MemorySegment.NULL);
+    
+    readWaitHandles = mem.allocateArray(Native.C_POINTER, 2);
+    readWaitHandles.setAtIndex(Native.C_POINTER, 0, readEvent);
+    readWaitHandles.setAtIndex(Native.C_POINTER, 1, shutdownEvent);
+    
+    writeWaitHandles = mem.allocateArray(Native.C_POINTER, 2);
+    writeWaitHandles.setAtIndex(Native.C_POINTER, 0, writeEvent);
+    writeWaitHandles.setAtIndex(Native.C_POINTER, 1, shutdownEvent);
   }
 
   public static NamedPipe connectToServer(String name, int desiredAccess) throws IOException {
-    WinNT.HANDLE handle = Kernel32.INSTANCE.CreateFile(
-        name, desiredAccess, 0, null, WinNT.OPEN_EXISTING, 0, null);
-    if (handle == INVALID_HANDLE_VALUE) {
-      throw new IOException("Error connecting to pipe '" + name + "': " + Native.getLastError());
-    }
-    return new NamedPipe(handle, true);
+	try(var mem = Arena.ofConfined()) {
+	    MemorySegment handle = Kernel32.CreateFileW(
+	        Native.toWideString(name, mem), desiredAccess, 0, MemorySegment.NULL, Kernel32.OPEN_EXISTING, 0, MemorySegment.NULL);
+	    if (handle.equals(Kernel32.INVALID_HANDLE_VALUE)) {
+	      throw new IOException("Error connecting to pipe '" + name + "': " + Kernel32.GetLastError());
+	    }
+	    return new NamedPipe(handle, true);
+	}
   }
 
   /**
@@ -82,26 +101,24 @@ public class NamedPipe {
       if (len == 0) {
         return 0;
       }
-      if (readBuffer.size() < len) {
-        readBuffer = new Memory(len);
+      if (readBuffer.byteSize() < len) {
+    	len = (int)readBuffer.byteSize();
       }
-      readOver.hEvent = readEvent;
-      readOver.write();
-      readActual.setValue(0);
-      boolean success = KERNEL32.ReadFile(myHandle, readBuffer, len, readActual, readOver.getPointer());
-      if (!success && Native.getLastError() == WinNT.ERROR_IO_PENDING) {
-        int waitRet = Kernel32.INSTANCE.WaitForMultipleObjects(
-                readWaitHandles.length, readWaitHandles, false, WinNT.INFINITE);
-        if (waitRet != WinNT.WAIT_OBJECT_0) {
-          KERNEL32.CancelIo(myHandle);
+      OVERLAPPED.hEvent(readOver, readEvent);
+      readActual.set(ValueLayout.JAVA_INT, 0, 0);
+      boolean success = ok(Kernel32.ReadFile(myHandle, readBuffer, len, readActual, readOver)) ;
+      if (!success && Kernel32.GetLastError() == Kernel32.ERROR_IO_PENDING) {
+        int waitRet = Kernel32.WaitForMultipleObjects(2, readWaitHandles, Native.FALSE, Kernel32.INFINITE);
+        if (waitRet != Kernel32.WAIT_OBJECT_0) {
+        	Kernel32.CancelIo(myHandle);
         }
-        success = KERNEL32.GetOverlappedResult(myHandle, readOver.getPointer(), readActual, true);
+        success = ok(Kernel32.GetOverlappedResult(myHandle, readOver, readActual, Native.TRUE));
       }
-      int actual = readActual.getValue();
+      int actual = readActual.get(ValueLayout.JAVA_INT, 0);
       if (!success || actual <= 0) {
         return -1;
       }
-      readBuffer.read(0, buf, off, actual);
+      readBuffer.asByteBuffer().get(0, buf, off, actual);
       return actual;
     } finally {
       readLock.unlock();
@@ -126,21 +143,19 @@ public class NamedPipe {
       if (len == 0) {
         return;
       }
-      if (writeBuffer.size() < len) {
-        writeBuffer = new Memory(len);
+      if (writeBuffer.byteSize() < len) {
+    	len = (int)writeBuffer.byteSize();
       }
-      writeBuffer.write(0, buf, off, len);
-      writeOver.hEvent = writeEvent;
-      writeOver.write();
-      writeActual.setValue(0);
-      boolean success = KERNEL32.WriteFile(myHandle, writeBuffer, len, writeActual, writeOver.getPointer());
-      if (!success && Native.getLastError() == WinNT.ERROR_IO_PENDING) {
-        int waitRet = Kernel32.INSTANCE.WaitForMultipleObjects(
-                writeWaitHandles.length, writeWaitHandles, false, WinNT.INFINITE);
-        if (waitRet != WinNT.WAIT_OBJECT_0) {
-          KERNEL32.CancelIo(myHandle);
+      writeBuffer.asByteBuffer().put(0, buf, off, len);
+      OVERLAPPED.hEvent(writeOver, writeEvent);
+      writeActual.set(ValueLayout.JAVA_INT, 0, 0);
+      boolean success = ok(Kernel32.WriteFile(myHandle, writeBuffer, len, writeActual, writeOver));
+      if (!success && Kernel32.GetLastError() == Kernel32.ERROR_IO_PENDING) {
+        int waitRet = Kernel32.WaitForMultipleObjects(2, writeWaitHandles, Native.FALSE, Kernel32.INFINITE);
+        if (waitRet != Kernel32.WAIT_OBJECT_0) {
+          Kernel32.CancelIo(myHandle);
         }
-        KERNEL32.GetOverlappedResult(myHandle, writeOver.getPointer(), writeActual, true);
+        Kernel32.GetOverlappedResult(myHandle, writeOver, writeActual, Native.TRUE);
       }
     } finally {
       writeLock.unlock();
@@ -153,11 +168,11 @@ public class NamedPipe {
       if (shutdownFlag) {
         return -1;
       }
-      peekActual.setValue(0);
-      if (!KERNEL32.PeekNamedPipe(myHandle, null, 0, null, peekActual, null)) {
+      peekActual.set(ValueLayout.JAVA_INT, 0, 0);
+      if (err(Kernel32.PeekNamedPipe(myHandle, MemorySegment.NULL, 0, MemorySegment.NULL, peekActual, MemorySegment.NULL))) {
         throw new IOException("PeekNamedPipe failed");
       }
-      return peekActual.getValue();
+      return peekActual.get(ValueLayout.JAVA_INT, 0);
     } finally {
       readLock.unlock();
     }
@@ -179,12 +194,16 @@ public class NamedPipe {
    * earlier.
    */
   public synchronized void close() throws IOException {
-    if (!closeImpl()) {
-      return;
-    }
-    if (!Kernel32.INSTANCE.CloseHandle(myHandle)) {
-      throw new IOException("Close error:" + Native.getLastError());
-    }
+	try {
+      if (!closeImpl()) {
+        return;
+      }
+      if (err(Kernel32.CloseHandle(myHandle))) {
+        throw new IOException("Close error:" + Kernel32.GetLastError());
+      }
+	} finally {
+	  mem.close();
+	}
   }
 
   private synchronized boolean closeImpl() {
@@ -193,16 +212,16 @@ public class NamedPipe {
       return false;
     }
     shutdownFlag = true;
-    Kernel32.INSTANCE.SetEvent(shutdownEvent);
+    Kernel32.SetEvent(shutdownEvent);
     if (!myFinalizedFlag) {
       readLock.lock();
       writeLock.lock();
       writeLock.unlock();
       readLock.unlock();
     }
-    Kernel32.INSTANCE.CloseHandle(shutdownEvent);
-    Kernel32.INSTANCE.CloseHandle(readEvent);
-    Kernel32.INSTANCE.CloseHandle(writeEvent);
+    Kernel32.CloseHandle(shutdownEvent);
+    Kernel32.CloseHandle(readEvent);
+    Kernel32.CloseHandle(writeEvent);
     return true;
   }
 

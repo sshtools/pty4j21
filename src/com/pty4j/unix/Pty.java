@@ -7,22 +7,26 @@
  */
 package com.pty4j.unix;
 
-import com.pty4j.PtyProcess;
-import com.pty4j.WinSize;
-import jtermios.FDSet;
-import jtermios.JTermios;
-import kotlin.Pair;
+import java.io.IOException;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.lang.foreign.MemorySegment;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
-import java.util.Locale;
+import com.pty4j.PtyProcess;
+import com.pty4j.WinSize;
+import com.pty4j.util.Pair;
 
 
 /**
  * Pty - pseudo terminal support.
  */
 public final class Pty {
+  private static final Logger LOG = System.getLogger(Pty.class.getName());
+	  
   private static final int O_RDONLY = 0x0000;
   private final String mySlaveName;
   private final PTYInputStream myIn;
@@ -30,20 +34,10 @@ public final class Pty {
   private final Object myFDLock = new Object();
   private final Object mySelectLock = new Object();
   private final int[] myPipe = new int[2];
+  private final PtyHelpers.OSFacade ptyHelper;
 
   private volatile int myMaster;
   private volatile int mySlaveFD;
-
-  private static final boolean useSelect = isOSXLessThanOrEqualTo106();
-
-  private static boolean isOSXLessThanOrEqualTo106() {
-    if (System.getProperty("os.name").toLowerCase(Locale.US).startsWith("mac")) {
-      String version = System.getProperty("os.version").toLowerCase(Locale.US);
-      String[] strings = version.split("\\.");
-      if (strings.length > 1 && strings[0].equals("10") && Integer.valueOf(strings[1]) <= 6) return true;
-    }
-    return false;
-  }
 
   private static final Object PTSNAME_LOCK = new Object();
 
@@ -64,21 +58,26 @@ public final class Pty {
     Pair<Integer, String> masterSlave = openMaster();
     myMaster = masterSlave.getFirst();
     mySlaveName = masterSlave.getSecond();
+    
+    LOG.log(Level.INFO, "Created pty {0} for master fd {1}, console is {2}", mySlaveName, myMaster, console);
 
     if (mySlaveName == null) {
       throw new IOException("Util.exception.cannotCreatePty");
     }
+    
+    ptyHelper = PtyHelpers.getInstance();
 
     // Without this line, on macOS the slave side of the pty will be automatically closed on process termination, and it
     // will be impossible to read process output after exit. It has a side effect: the child process won't be terminated
     // until we've read all the output from it.
     //
     // See this report for details: https://developer.apple.com/forums/thread/663632
-    mySlaveFD = openOpenTtyToPreserveOutputAfterTermination ? JTermios.open(mySlaveName, O_RDONLY) : -1;
+    mySlaveFD = openOpenTtyToPreserveOutputAfterTermination ? ptyHelper.open(mySlaveName, O_RDONLY) : -1;
 
     myIn = new PTYInputStream(this);
     myOut = new PTYOutputStream(this);
-    JTermios.pipe(myPipe);
+
+    ptyHelper.pipe(myPipe);
   }
 
   public String getSlaveName() {
@@ -201,7 +200,7 @@ public final class Pty {
         if (mySlaveFD != -1) {
           int fd = mySlaveFD;
           mySlaveFD = -1;
-          int status = JTermios.close(fd);
+          int status = ptyHelper.close(fd);
           if (status == -1) {
             throw new IOException("Close error");
           }
@@ -217,13 +216,13 @@ public final class Pty {
   }
 
   private int close0(int fd) throws IOException {
-    int ret = JTermios.close(fd);
+    int ret = ptyHelper.close(fd);
 
     breakRead();
 
     synchronized (mySelectLock) {
-      JTermios.close(myPipe[0]);
-      JTermios.close(myPipe[1]);
+      ptyHelper.close(myPipe[0]);
+      ptyHelper.close(myPipe[1]);
       myPipe[0] = -1;
       myPipe[1] = -1;
     }
@@ -232,7 +231,21 @@ public final class Pty {
   }
 
   void breakRead() {
-    JTermios.write(myPipe[1], new byte[1], 1);
+	  ptyHelper.write(myPipe[1], new byte[1], 1);
+  }
+
+  int fastRead(MemorySegment buf, int len) {
+    int fd = myMaster;
+    if (fd == -1) return -1;
+
+    boolean haveBytes;
+    synchronized (mySelectLock) {
+      if (myPipe[0] == -1) return -1;
+
+      haveBytes = poll(myPipe[0], fd);
+    }
+
+    return haveBytes ? ptyHelper.fastRead(fd, buf, len) : -1;
   }
 
   int read(byte[] buf, int len) throws IOException {
@@ -243,36 +256,28 @@ public final class Pty {
     synchronized (mySelectLock) {
       if (myPipe[0] == -1) return -1;
 
-      haveBytes = useSelect ? select(myPipe[0], fd) : poll(myPipe[0], fd);
+      haveBytes = poll(myPipe[0], fd);
     }
 
-    return haveBytes ? JTermios.read(fd, buf, len) : -1;
+    return haveBytes ? ptyHelper.read(fd, buf, len) : -1;
   }
 
-  private static boolean poll(int pipeFd, int fd) {
-    // each {int, short, short} structure is represented by two ints
-    int[] poll_fds = new int[]{pipeFd, JTermios.POLLIN, fd, JTermios.POLLIN};
+  private boolean poll(int pipeFd, int fd) {
+    var poll_fds = new int[]{pipeFd, fd};
+    var poll_evts = new short[]{(short)LibC.POLLIN, (short)LibC.POLLIN};
+    var errno = new AtomicInteger();
     while (true) {
-      if (JTermios.poll(poll_fds, 2, -1) > 0) break;
+      if (ptyHelper.poll(poll_fds, poll_evts, 2, -1, errno) > 0) 
+    	  break;
 
-      int errno = JTermios.errno();
-      if (errno != JTermios.EAGAIN && errno != JTermios.EINTR) return false;
+      if (errno.get() != LibC.EAGAIN && errno.get() != LibC.EINTR) 
+    	  return false;
     }
-    return ((poll_fds[3] >> 16) & JTermios.POLLIN) != 0;
-  }
-
-  private static boolean select(int pipeFd, int fd) {
-    FDSet set = JTermios.newFDSet();
-
-    JTermios.FD_SET(pipeFd, set);
-    JTermios.FD_SET(fd, set);
-    JTermios.select(Math.max(fd, pipeFd) + 1, set, null, null, null);
-
-    return JTermios.FD_ISSET(fd, set);
+    return ((poll_evts[1]) & LibC.POLLIN) != 0;
   }
 
   int write(byte[] buf, int len) throws IOException {
-    return JTermios.write(myMaster, buf, len);
+    return ptyHelper.write(myMaster, buf, len); 
   }
 
 }

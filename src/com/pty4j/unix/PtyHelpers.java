@@ -20,27 +20,42 @@
  */
 package com.pty4j.unix;
 
-import com.pty4j.PtyProcess;
-import com.pty4j.WinSize;
-import com.pty4j.util.LazyValue;
-import com.pty4j.util.PtyUtil;
-import com.sun.jna.Native;
-import com.sun.jna.Platform;
-import jtermios.JTermios;
-import jtermios.Termios;
+import java.io.File;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentAllocator;
+import java.lang.foreign.ValueLayout;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.File;
+import com.pty4j.Platform;
+import com.pty4j.PtyProcess;
+import com.pty4j.WinSize;
+import com.pty4j.unix.LibC.LibCHelper;
+import com.pty4j.unix.LibC.pollfd;
+import com.pty4j.unix.LibC.termios;
+import com.pty4j.util.LazyValue;
+import com.pty4j.util.PtyUtil;
 
 /**
  * Provides access to the pseudoterminal functionality on POSIX(-like) systems,
  * emulating such system calls on non POSIX systems.
  */
 public class PtyHelpers {
-  private static final Logger LOG = LoggerFactory.getLogger(PtyHelpers.class);
+  private static final Logger LOG = System.getLogger(PtyHelpers.class.getName());
+  
+  public interface FDSet {
+    void set(int fd);
+    boolean isSet(int fd);
+    MemorySegment memory();
+  }
 
   /**
    * Provides a OS-specific interface to the PtyHelpers methods.
@@ -50,12 +65,14 @@ public class PtyHelpers {
      * Terminates or signals the process with the given PID.
      *
      * @param pid the process ID to terminate or signal;
-     * @param sig the signal number to send, for example, 9 to terminate the
+     * @param signal the signal number to send, for example, 9 to terminate the
      *            process.
      * @return a value of <code>0</code> upon success, or a non-zero value in case
      *         of an error (see {@link PtyHelpers#errno()} for details).
      */
-    int kill(int pid, int sig);
+    default int kill(int pid, int signal) {
+       return LibC.kill(pid, signal);
+    }
 
     /**
      * Waits until the process with the given PID is stopped.
@@ -67,71 +84,175 @@ public class PtyHelpers {
      * @return 0 upon success, -1 upon failure (see {@link PtyHelpers#errno()} for
      *         details).
      */
-    int waitpid(int pid, int[] stat, int options);
+    default int waitpid(int pid, int[] stat, int options) {
+      try (var offHeap = Arena.ofConfined()) {
+          return LibC.waitpid(pid, offHeap.allocateArray(ValueLayout.JAVA_INT, stat), options);
+      }
+    }
 
-    int sigprocmask(int how, com.sun.jna.ptr.IntByReference set, com.sun.jna.ptr.IntByReference oldset);
-
-    String strerror(int errno);
+    default int sigprocmask(int how, AtomicInteger set, AtomicInteger oldset) {
+        try (var offHeap = Arena.ofConfined()) {
+        	var setMem = offHeap.allocate(ValueLayout.JAVA_INT, set.get());
+        	var oldsetMem = offHeap.allocate(ValueLayout.JAVA_INT, oldset.get());
+            var res = LibC.sigprocmask(how, setMem, oldsetMem);
+            set.set(setMem.get(ValueLayout.JAVA_INT, 0));
+            oldset.set(oldsetMem.get(ValueLayout.JAVA_INT, 0));
+            return res;
+        }
+    }
+    
+    default String strerror(int errno) {
+      return LibC.strerror(errno).getUtf8String(0);
+    }
 
     int getpt(); //getpt
 
-    int grantpt(int fdm);
+    default int grantpt(int fd) {
+      return LibC.grantpt(fd);
+    }
 
-    int unlockpt(int fdm);
+    default int unlockpt(int fd) {
+      return LibC.unlockpt(fd);
+    }
 
-    int close(int fdm);
+    default int close(int fd) {
+      return LibC.close(fd);
+    }
 
-    String ptsname(int fdm);
+    default String ptsname(int fd) {
+      var seg = LibC.ptsname(fd);
+      if(seg.equals(MemorySegment.NULL))
+    	  return null;
+      else
+    	  return seg.getUtf8String(0);
+    }
 
-    int killpg(int pid, int sig);
+    default int killpg(int pid, int sig) {
+        return LibC.killpg(pid, sig);
+    }
 
-    int fork();
+    default int fork() {
+        return LibC.fork();
+    }
 
-    int pipe(int[] pipe2);
+    default int pipe(int[] pipe2) {
+      try (var offHeap = Arena.ofConfined()) {
+        var arr = offHeap.allocateArray(ValueLayout.JAVA_INT, pipe2);
+        var res = LibC.pipe(arr);
+        if(res == 0) {
+          var ret = arr.toArray(ValueLayout.JAVA_INT);
+          System.arraycopy(ret, 0, pipe2, 0, ret.length);
+        }
+        return res;
+      }
+    }
 
-    int setsid();
+    default int setsid() {
+      return LibC.setsid();
+    }
 
-    int getpid();
+    default int getpid() {
+      return LibC.getpid();
+    }
 
-    int setpgid(int pid, int pgid);
+    default int setpgid(int pid, int pgid) {
+      return LibC.setpgid(pid, pgid);
+    }
 
-    void dup2(int fds, int fileno);
+    default void dup2(int fds, int fileno) {
+  	  LibC.dup2(fds, fileno);
+    }
 
-    int getppid();
+    default int getppid() {
+      return LibC.getppid();
+    }
 
-    void unsetenv(String s);
+    default void unsetenv(String s) {
+      try (var offHeap = Arena.ofConfined()) {  
+      	LibC.unsetenv(offHeap.allocateUtf8String(s));
+      }
+    }
 
     int login_tty(int fd);
 
-    void chdir(String dirpath);
+    default void chdir(String dirpath) {
+      try (var offHeap = Arena.ofConfined()) {
+      	LibC.chdir(offHeap.allocateUtf8String(dirpath));
+      }
+    }
 
     default int tcdrain(int fd) {
-      return JTermios.tcdrain(fd);
+  	  return LibC.tcdrain(fd);
     }
 
     default int open(String path, int mode) {
-      return JTermios.open(path, mode);
+      try (var offHeap = Arena.ofConfined()) {
+        return LibC.open(offHeap.allocateUtf8String(path), mode);
+      }
+    }
+
+    default int fastRead(int fd, MemorySegment buffer, int len) {
+      return LibC.read(fd, buffer, len);
     }
 
     default int read(int fd, byte[] buffer, int len) {
-      return JTermios.read(fd, buffer, len);
+        try (var offHeap = Arena.ofConfined()) {
+          var arr = offHeap.allocate(len);
+          var res = LibC.read(fd, arr, len);
+          if(res > 0) {
+              arr.asByteBuffer().get(buffer);
+          }
+          return res;
+        }
     }
 
-    default int errno() {
-      return JTermios.errno();
+    default int write(int fd, byte[] buffer, int len) {
+        try (var offHeap = Arena.ofConfined()) {
+          return LibC.write(fd, offHeap.allocateArray(ValueLayout.JAVA_BYTE, buffer), len);
+        }
     }
 
     default int tcgetattr(int fd, TerminalSettings settings) {
-      Termios termios = new Termios();
-      int result = JTermios.tcgetattr(fd, termios);
-      fillTerminalSettings(settings, termios);
-      return result;
+        try (var offHeap = Arena.ofConfined()) {
+          var termiosMem = termios.allocate(offHeap);
+          var result = LibC.tcgetattr(fd, termiosMem);
+          fillTerminalSettings(settings, termiosMem);
+          return result;
+        }
     }
 
     default int tcsetattr(int fd, int opt, TerminalSettings settings) {
-      Termios termios = convertToTermios(settings);
-      return JTermios.tcsetattr(fd, opt, termios);
+      try (var offHeap = Arena.ofConfined()) {
+        return LibC.tcsetattr(fd, opt, convertToTermios(settings, offHeap));
+      }
     }
+
+    default int poll(int[] fds, short[] events, long nfds, int timeout, AtomicInteger errno) {
+      /* https://docs.oracle.com/en/java/javase/21/core/checking-native-errors-using-errno.html#GUID-BBB64F4A-A68C-4E70-BFCA-B9984D7D3C47 */
+      try (var offHeap = Arena.ofConfined()) {
+        var capturedState = offHeap.allocate(LibCHelper.capturedStateLayout);
+        var pollfds = pollfd.allocateArray(fds.length, offHeap);
+        for(int i = 0 ; i < fds.length; i++) {
+      	  pollfd.fd$set(pollfds, i, fds[i]);
+          pollfd.events$set(pollfds, i, events[i]);
+        }
+  	    var res = LibC.poll(pollfds, nfds, timeout);
+  	    if(res < 1) {
+  	      var errnoVal = (int)LibCHelper.errnoHandle.get(capturedState);
+		  errno.set(errnoVal);
+  	    }
+  	    else {
+          for(int i = 0 ; i < fds.length; i++) {
+            events[i] = pollfd.revents$get(pollfds, i);
+          }
+  	    }
+  	    return res;
+      }
+    }
+//
+//    default int errno() {
+//      return JTermios.errno();
+//    }
   }
 
   public static class TerminalSettings {
@@ -144,26 +265,26 @@ public class PtyHelpers {
     public int c_ospeed;
   }
 
-  private static Termios convertToTermios(TerminalSettings settings) {
-    Termios result = new Termios();
-    result.c_iflag = settings.c_iflag;
-    result.c_oflag = settings.c_oflag;
-    result.c_cflag = settings.c_cflag;
-    result.c_lflag = settings.c_lflag;
-    System.arraycopy(settings.c_cc, 0, result.c_cc, 0, settings.c_cc.length);
-    result.c_ispeed = settings.c_ispeed;
-    result.c_ospeed = settings.c_ospeed;
+  private static MemorySegment convertToTermios(TerminalSettings settings, SegmentAllocator allocator) {
+	var result = termios.allocate(allocator);
+	termios.c_iflag$set(result, settings.c_iflag);
+	termios.c_oflag$set(result, settings.c_oflag);
+	termios.c_cflag$set(result, settings.c_cflag);
+	termios.c_lflag$set(result, settings.c_lflag);
+	termios.c_cc$slice(result).asByteBuffer().put(settings.c_cc);
+	termios.c_ispeed$set(result, settings.c_ispeed);
+	termios.c_ospeed$set(result, settings.c_ospeed);
     return result;
   }
 
-  private static void fillTerminalSettings(TerminalSettings settings, Termios termios) {
-    settings.c_iflag = termios.c_iflag;
-    settings.c_oflag = termios.c_oflag;
-    settings.c_cflag = termios.c_cflag;
-    settings.c_lflag = termios.c_lflag;
-    System.arraycopy(termios.c_cc, 0, settings.c_cc, 0, termios.c_cc.length);
-    settings.c_ispeed = termios.c_ispeed;
-    settings.c_ospeed = termios.c_ospeed;
+  private static void fillTerminalSettings(TerminalSettings settings, MemorySegment termiosMem) {
+	settings.c_iflag = termios.c_iflag$get(termiosMem);
+	settings.c_oflag = termios.c_oflag$get(termiosMem);
+	settings.c_cflag = termios.c_cflag$get(termiosMem);
+	settings.c_lflag = termios.c_lflag$get(termiosMem);
+	settings.c_cc = termios.c_cc$slice(termiosMem).toArray(ValueLayout.JAVA_BYTE);
+    settings.c_ispeed = termios.c_ispeed$get(termiosMem);
+    settings.c_ospeed = termios.c_ospeed$get(termiosMem);
   }
 
   // CONSTANTS
@@ -186,10 +307,6 @@ public class PtyHelpers {
   public static int HUPCL = 0x00004000;
 
   public static int IUTF8 = 0x00004000;
-
-  public static int O_NOCTTY = JTermios.O_NOCTTY;
-  public static int O_RDWR = JTermios.O_RDWR;
-  public static int TCSANOW = JTermios.TCSANOW;
 
   private static final int STDIN_FILENO = 0;
   private static final int STDOUT_FILENO = 1;
@@ -247,13 +364,13 @@ public class PtyHelpers {
       getOsFacade();
     }
     catch (Throwable t) {
-      LOG.error(t.getMessage(), t.getCause());
+      LOG.log(Level.ERROR, t.getMessage(), t.getCause());
     }
     try {
       getPtyExecutor();
     }
     catch (Throwable t) {
-      LOG.error(t.getMessage(), t.getCause());
+      LOG.log(Level.ERROR, t.getMessage(), t.getCause());
     }
   }
 
@@ -280,36 +397,36 @@ public class PtyHelpers {
     return getOsFacade();
   }
 
-  public static Termios createTermios() {
-    Termios term = new Termios();
+  public static MemorySegment createTermios(SegmentAllocator allocator) {
+	var term = termios.allocate(allocator);
 
     boolean isUTF8 = true;
-    term.c_iflag = JTermios.ICRNL | JTermios.IXON | JTermios.IXANY | IMAXBEL | JTermios.BRKINT | (isUTF8 ? IUTF8 : 0);
-    term.c_oflag = JTermios.OPOST | ONLCR;
-    term.c_cflag = JTermios.CREAD | JTermios.CS8 | HUPCL;
-    term.c_lflag = JTermios.ICANON | JTermios.ISIG | JTermios.IEXTEN | JTermios.ECHO | JTermios.ECHOE | ECHOK | ECHOKE | ECHOCTL;
+    termios.c_iflag$set(term, LibC.ICRNL | LibC.IXON | LibC.IXANY | IMAXBEL | LibC.BRKINT | (isUTF8 ? IUTF8 : 0));
+    termios.c_oflag$set(term, LibC.OPOST | LibC.ONLCR);
+    termios.c_cflag$set(term, LibC.CREAD | LibC.CS8 | HUPCL);
+    termios.c_lflag$set(term, LibC.ICANON | LibC.ISIG | LibC.IEXTEN | LibC.ECHO | LibC.ECHOE | ECHOK | ECHOKE | ECHOCTL);
 
-    term.c_cc[JTermios.VEOF] = CTRLKEY('D');
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VEOF, CTRLKEY('D'));
 //    term.c_cc[VEOL] = -1;
 //    term.c_cc[VEOL2] = -1;
-    term.c_cc[VERASE] = 0x7f;           // DEL
-    term.c_cc[VWERASE] = CTRLKEY('W');
-    term.c_cc[VKILL] = CTRLKEY('U');
-    term.c_cc[VREPRINT] = CTRLKEY('R');
-    term.c_cc[VINTR] = CTRLKEY('C');
-    term.c_cc[VQUIT] = 0x1c;           // Control+backslash
-    term.c_cc[VSUSP] = CTRLKEY('Z');
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VERASE, (byte)0x7f);           // DEL
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VWERASE, CTRLKEY('W'));
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VKILL, CTRLKEY('U'));
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VREPRINT, CTRLKEY('R'));
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VINTR, CTRLKEY('C'));
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VQUIT, (byte)0x1c);           // Control+backslash
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VSUSP, CTRLKEY('Z'));
 //    term.c_cc[VDSUSP] = CTRLKEY('Y');
-    term.c_cc[JTermios.VSTART] = CTRLKEY('Q');
-    term.c_cc[JTermios.VSTOP] = CTRLKEY('S');
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VSTART, CTRLKEY('Q'));
+    termios.c_cc$slice(term).set(ValueLayout.JAVA_BYTE, LibC.VSTOP, CTRLKEY('S'));
 //    term.c_cc[VLNEXT] = CTRLKEY('V');
 //    term.c_cc[VDISCARD] = CTRLKEY('O');
 //    term.c_cc[VMIN] = 1;
 //    term.c_cc[VTIME] = 0;
 //    term.c_cc[VSTATUS] = CTRLKEY('T');
 
-    term.c_ispeed = JTermios.B38400;
-    term.c_ospeed = JTermios.B38400;
+    termios.c_ispeed$set(term, LibC.B38400);
+    termios.c_ospeed$set(term, LibC.B38400);
 
     return term;
   }
@@ -363,19 +480,6 @@ public class PtyHelpers {
    */
   public static int waitpid(int pid, int[] stat, int options) {
     return getOsFacade().waitpid(pid, stat, options);
-  }
-
-  /**
-   * Returns the last known error.
-   *
-   * @return the last error number from the native system.
-   */
-  public static int errno() {
-    return Native.getLastError();
-  }
-
-  public static String strerror() {
-    return getOsFacade().strerror(errno());
   }
 
   public static void chdir(String dirpath) {

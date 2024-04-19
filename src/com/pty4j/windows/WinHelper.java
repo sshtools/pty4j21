@@ -1,53 +1,59 @@
 package com.pty4j.windows;
 
-import com.pty4j.util.PtyUtil;
-import com.sun.jna.Library;
-import com.sun.jna.Native;
-import com.sun.jna.Platform;
-import com.sun.jna.Pointer;
-import com.sun.jna.platform.win32.WinDef;
-import com.sun.jna.ptr.PointerByReference;
-import org.jetbrains.annotations.NotNull;
+import static java.lang.foreign.ValueLayout.ADDRESS;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import java.io.IOException;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
+import java.lang.invoke.MethodHandle;
+
+import com.pty4j.unix.LibC;
+import com.pty4j.unix.LibC.LibCHelper;
+import com.pty4j.util.PtyUtil;
 
 public final class WinHelper {
 
-  private WinHelper() {}
+	public static String getCurrentDirectory(long processId) {
+		try (var offHeap = Arena.ofConfined()) {
+			var errorMessagePtr = offHeap.allocate(ADDRESS);
+			var currentDirectory = (MemorySegment) LibCHelper
+					.downcallHandle("getCurrentDirectory",
+							FunctionDescriptor.of(LibCHelper.POINTER, JAVA_LONG, ADDRESS))
+					.invokeExact(processId, errorMessagePtr);
+			var err = errorMessagePtr.getUtf8String(0);
+			if (currentDirectory != null) {
+				if (err.length() > 0) {
+					throw new IOException("Unexpected error message: " + err);
+				}
+				return currentDirectory.getUtf8String(0);
+			}
+			if (err.length() == 0) {
+				throw new IOException("getCurrentDirectory failed without error message");
+			}
+			throw new IOException("getCurrentDirectory failed: " + err);
+		} catch (Throwable ex$) {
+			throw new AssertionError("should not reach here", ex$);
+		}
+	}
 
-  public static @NotNull String getCurrentDirectory(long processId) throws IOException {
-    if (!Platform.isWindows()) {
-      throw new IOException("Should be called on Windows OS only");
-    }
-    PointerByReference errorMessageRef = new PointerByReference();
-    Pointer currentDirectory = Holder.INSTANCE.getCurrentDirectory(new WinDef.DWORD(processId), errorMessageRef);
-    Pointer errorMessagePtr = errorMessageRef.getValue();
-    if (currentDirectory != null) {
-      if (errorMessagePtr != null) {
-        throw new IOException("Unexpected error message: " + getStringAndFree(errorMessagePtr));
-      }
-      return getStringAndFree(currentDirectory);
-    }
-    if (errorMessagePtr == null) {
-      throw new IOException("getCurrentDirectory failed without error message");
-    }
-    throw new IOException("getCurrentDirectory failed: " + getStringAndFree(errorMessagePtr));
-  }
+	public final static class Helper {
 
-  private static @NotNull String getStringAndFree(@NotNull Pointer stringPtr) {
-    String result = stringPtr.getWideString(0);
-    Native.free(Pointer.nativeValue(stringPtr));
-    return result;
-  }
+		private static final SymbolLookup SYMBOL_LOOKUP;
 
-  private interface WinHelperNativeLibrary extends Library {
-    Pointer getCurrentDirectory(WinDef.DWORD pid, PointerByReference errorMessagePtr);
-  }
+		static {
+			SymbolLookup loaderLookup = SymbolLookup.libraryLookup(PtyUtil.resolveNativeFile("win-helper.dll").toPath(), Arena.global());
+			SYMBOL_LOOKUP = name -> loaderLookup.find(name).or(() -> LibC.LINKER.defaultLookup().find(name));
+		}
 
-  private static class Holder {
-    private static final WinHelperNativeLibrary INSTANCE = Native.load(
-        PtyUtil.resolveNativeFile("win-helper.dll").getAbsolutePath(),
-        WinHelperNativeLibrary.class
-    );
-  }
+		static MethodHandle downcallHandle(String name, FunctionDescriptor fdesc) {
+			return SYMBOL_LOOKUP.find(name).map(addr -> LibC.LINKER.downcallHandle(addr, fdesc)).orElse(null);
+		}
+	}
+
+	private WinHelper() {
+	}
+
 }

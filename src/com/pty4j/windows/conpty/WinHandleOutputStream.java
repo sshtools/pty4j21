@@ -1,20 +1,23 @@
 package com.pty4j.windows.conpty;
 
-import com.sun.jna.platform.win32.Kernel32;
-import com.sun.jna.platform.win32.WinNT;
-import com.sun.jna.ptr.IntByReference;
-import org.jetbrains.annotations.NotNull;
+import static com.pty4j.Native.err;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.Arrays;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Objects;
 
+import org.jetbrains.annotations.NotNull;
+
+import com.pty4j.windows.Kernel32;
+
 public class WinHandleOutputStream extends OutputStream {
-  private final WinNT.HANDLE myWritePipe;
+  private final MemorySegment myWritePipe;
   private volatile boolean myClosed;
 
-  public WinHandleOutputStream(@NotNull WinNT.HANDLE writePipe) {
+  public WinHandleOutputStream(@NotNull MemorySegment writePipe) {
     myWritePipe = writePipe;
   }
 
@@ -32,10 +35,13 @@ public class WinHandleOutputStream extends OutputStream {
     if (myClosed) {
       throw new IOException("Closed stdout");
     }
-    byte[] buffer = Arrays.copyOfRange(b, off, off + len);
-    IntByReference lpNumberOfBytesWritten = new IntByReference(0);
-    if (!Kernel32.INSTANCE.WriteFile(myWritePipe, buffer, buffer.length, lpNumberOfBytesWritten, null)) {
-      throw new LastErrorExceptionEx("WriteFile stdout");
+    try(Arena mem = Arena.ofConfined()) {
+    	MemorySegment buffer = mem.allocate(len);
+    	buffer.asByteBuffer().put(b, off, len);
+	    MemorySegment lpNumberOfBytesWritten = mem.allocate(ValueLayout.JAVA_INT);
+	    if (err(Kernel32.WriteFile(myWritePipe, buffer, len, lpNumberOfBytesWritten, MemorySegment.NULL))) {
+	      throw new LastErrorExceptionEx("WriteFile stdout");
+	    }
     }
   }
 
@@ -43,7 +49,7 @@ public class WinHandleOutputStream extends OutputStream {
   public void close() throws IOException {
     if (!myClosed) {
       myClosed = true;
-      if (!Kernel32.INSTANCE.CloseHandle(myWritePipe)) {
+      if (err(Kernel32.CloseHandle(myWritePipe))) {
         throw new LastErrorExceptionEx("CloseHandle stdout");
       }
     }

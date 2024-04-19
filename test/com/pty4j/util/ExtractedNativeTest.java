@@ -1,15 +1,9 @@
 package com.pty4j.util;
 
-import com.pty4j.TestUtil;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.FileVisitResult;
@@ -17,11 +11,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+
+import com.pty4j.TestUtil;
 
 public class ExtractedNativeTest {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ExtractedNativeTest.class);
+  private static final Logger LOG = System.getLogger(ExtractedNativeTest.class.getName());
 
   private ClassLoader myPrevClassLoader;
   private String myResourceNamePrefix = null;
@@ -33,7 +39,7 @@ public class ExtractedNativeTest {
       myPrevClassLoader = Thread.currentThread().getContextClassLoader();
       myResourceNamePrefix = "";
       URL url = TestUtil.getBuiltNativeFolder().toUri().toURL();
-      LOG.info("Adding " + url + " to current thread classpath");
+      LOG.log(Level.INFO, "Adding {0} to current thread classpath", url);
       ClassLoader urlCl = URLClassLoader.newInstance(new URL[]{url}, myPrevClassLoader);
       Thread.currentThread().setContextClassLoader(urlCl);
     }

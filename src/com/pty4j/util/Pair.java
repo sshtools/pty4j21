@@ -15,10 +15,6 @@
  */
 package com.pty4j.util;
 
-/**
- * @deprecated use other Pair class instead, e.g. {@link kotlin.Pair}
- */
-@Deprecated(forRemoval = true)
 public final class Pair<A, B> {
   public final A first;
   public final B second;
