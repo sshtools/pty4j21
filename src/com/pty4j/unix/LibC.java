@@ -28,11 +28,6 @@ import com.pty4j.Native;
 
 public class LibC {
   
-  private final static class LazyInit {
-    private static final MethodHandle HNDL_WRITE = LibCHelper.downcallHandle("write", FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, JAVA_INT));
-    private static final MethodHandle HNDL_READ = LibCHelper.downcallHandle("read", FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, JAVA_INT));
-  }
-  
   public static final Linker LINKER = Linker.nativeLinker();
   private static final SegmentAllocator THROWING_ALLOCATOR = (x, y) -> {
     throw new AssertionError("should not reach here");
@@ -78,240 +73,347 @@ public class LibC {
   public static int VSUSP = 10;
   public static int VREPRINT = 12;
   public static int VWERASE = 14;
+  
+  private final static class getpid {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("getpid", DESC);
+  }
 
   public static int getpid() {
     try {
-      return (int) LibCHelper.downcallHandle("getpid", FunctionDescriptor.of(JAVA_INT)).invokeExact();
+      return (int) getpid.HANDLE.invokeExact();
     } catch (RuntimeException re) {
       throw re;
     } catch (Throwable e) {
       throw new IllegalStateException(e);
     }
+  }
+  
+  private final static class getppid {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("getppid", DESC);
   }
 
   public static int getppid() {
     try {
-      return (int) LibCHelper.downcallHandle("getppid", FunctionDescriptor.of(JAVA_INT)).invokeExact();
+      return (int) getppid.HANDLE.invokeExact();
     } catch (RuntimeException re) {
       throw re;
     } catch (Throwable e) {
       throw new IllegalStateException(e);
     }
   }
+  
+  private final static class chdir {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("chdir", DESC);
+  }
 
   public static int chdir(MemorySegment __path) {
     try {
-      return (int) LibCHelper.downcallHandle("chdir", FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER))
-          .invokeExact(__path);
+      return (int) chdir.HANDLE.invokeExact(__path);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class setpgid {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("setpgid", DESC);
   }
 
   public static int setpgid(int __pid, int __pgid) {
     try {
-      return (int) LibCHelper.downcallHandle("setpgid", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT))
-          .invokeExact(__pid, __pgid);
+      return (int) setpgid.HANDLE.invokeExact(__pid, __pgid);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class fork {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("fork", DESC);
   }
 
   public static int fork() {
     try {
-      return (int) LibCHelper.downcallHandle("fork", FunctionDescriptor.of(JAVA_INT)).invokeExact();
+      return (int) fork.HANDLE.invokeExact();
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class close {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("close", DESC);
   }
 
   public static int close(int __fd) {
     try {
-      return (int) LibCHelper.downcallHandle("close", FunctionDescriptor.of(JAVA_INT, JAVA_INT)).invokeExact(__fd);
+      return (int) close.HANDLE.invokeExact(__fd);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class setsid {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("setsid", DESC);
   }
 
   public static int setsid() {
     try {
-      return (int) LibCHelper.downcallHandle("setsid", FunctionDescriptor.of(JAVA_INT)).invokeExact();
+      return (int) setsid.HANDLE.invokeExact();
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class dup2 {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("dup2", DESC);
   }
 
   public static int dup2(int __fd, int __fd2) {
     try {
-      return (int) LibCHelper.downcallHandle("dup2", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT))
-          .invokeExact(__fd, __fd2);
+      return (int) dup2.HANDLE.invokeExact(__fd, __fd2);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class waitpid {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("waitpid", DESC);
   }
 
   public static int waitpid(int __pid, MemorySegment __stat_loc, int __options) {
     try {
-      return (int) LibCHelper
-          .downcallHandle("waitpid", FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, JAVA_INT))
-          .invokeExact(__pid, __stat_loc, __options);
+      return (int) waitpid.HANDLE.invokeExact(__pid, __stat_loc, __options);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class killpg {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("killpg", DESC);
   }
 
   public static int killpg(int __pgrp, int __sig) {
     try {
-      return (int) LibCHelper.downcallHandle("killpg", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT))
-          .invokeExact(__pgrp, __sig);
+      return (int) killpg.HANDLE.invokeExact(__pgrp, __sig);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class kill {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("kill", DESC);
   }
 
   public static int kill(int __pid, int __sig) {
     try {
-      return (int) LibCHelper.downcallHandle("kill", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT))
-          .invokeExact(__pid, __sig);
+      return (int) kill.HANDLE.invokeExact(__pid, __sig);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class read {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("read", DESC);
   }
 
   public static int read(int __fd, MemorySegment __buf, int __len) {
     try {
-      return (int) LazyInit.HNDL_READ.invokeExact(__fd, __buf, __len);
+      return (int) read.HANDLE.invokeExact(__fd, __buf, __len);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class write {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("write", DESC);
   }
 
   public static int write(int __fd, MemorySegment __buf, int __len) {
     try {
-      return (int) LazyInit.HNDL_WRITE
-          .invokeExact(__fd, __buf, __len);
+      return (int) write.HANDLE.invokeExact(__fd, __buf, __len);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class sigprocmask {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, LibCHelper.POINTER);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("sigprocmask",DESC);
   }
 
   public static int sigprocmask(int __how, MemorySegment __set, MemorySegment __oset) {
     try {
-      return (int) LibCHelper
-          .downcallHandle("sigprocmask",
-              FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, LibCHelper.POINTER))
-          .invokeExact(__how, __set, __oset);
+      return (int) sigprocmask.HANDLE.invokeExact(__how, __set, __oset);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class grantpt {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("grantpt", DESC);
   }
 
   public static int grantpt(int __fdm) {
     try {
-      return (int) LibCHelper.downcallHandle("grantpt", FunctionDescriptor.of(JAVA_INT, JAVA_INT)).invokeExact(__fdm);
+      return (int) grantpt.HANDLE.invokeExact(__fdm);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class unlockpt {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("unlockpt", DESC);
   }
 
   public static int unlockpt(int __fdm) {
     try {
-      return (int) LibCHelper.downcallHandle("unlockpt", FunctionDescriptor.of(JAVA_INT, JAVA_INT)).invokeExact(__fdm);
+      return (int) unlockpt.HANDLE.invokeExact(__fdm);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class ptsname {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(LibCHelper.POINTER, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("ptsname", DESC);
   }
 
   public static MemorySegment ptsname(int __fd) {
     try {
-      return (java.lang.foreign.MemorySegment) LibCHelper
-          .downcallHandle("ptsname", FunctionDescriptor.of(LibCHelper.POINTER, JAVA_INT)).invokeExact(__fd);
+      return (java.lang.foreign.MemorySegment) ptsname.HANDLE.invokeExact(__fd);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
   }
+  
+  private final static class unsetenv {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("unsetenv", DESC);
+  }
 
   public static int unsetenv(MemorySegment __name) {
     try {
-      return (int) LibCHelper.downcallHandle("unsetenv", FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER))
-          .invokeExact(__name);
+      return (int) unsetenv.HANDLE.invokeExact(__name);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class select {
+	  static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, LibCHelper.POINTER,
+              LibCHelper.POINTER, LibCHelper.POINTER);
   }
 
   public static int select(int __nfds, MemorySegment __readfds, MemorySegment __writefds, MemorySegment __exceptfds,
       MemorySegment __timeout) {
     try {
       return (int) LibCHelper
-          .downcallHandle("select", FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER, LibCHelper.POINTER,
-              LibCHelper.POINTER, LibCHelper.POINTER))
+          .downcallHandle("select", select.DESC)
           .invokeExact(__nfds, __readfds, __writefds, __exceptfds, __timeout);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
   }
+  
+  private final static class strerror {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(LibCHelper.POINTER, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("strerror", DESC);
+  }
 
   public static MemorySegment strerror(int __errno) {
     try {
-      return (java.lang.foreign.MemorySegment) LibCHelper
-          .downcallHandle("strerror", FunctionDescriptor.of(LibCHelper.POINTER, JAVA_INT)).invokeExact(__errno);
+      return (java.lang.foreign.MemorySegment) strerror.HANDLE.invokeExact(__errno);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class pipe {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("pipe", DESC);
   }
 
   public static int pipe(MemorySegment __pipedes) {
     try {
-      return (int) LibCHelper.downcallHandle("pipe", FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER))
-          .invokeExact(__pipedes);
+      return (int) pipe.HANDLE.invokeExact(__pipedes);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class open {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandleVariadic("open", DESC);
   }
 
   public static int open(MemorySegment __file, int __oflag, Object... x2) {
     try {
-      return (int) LibCHelper
-          .downcallHandleVariadic("open", FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER, JAVA_INT))
-          .invokeExact(__file, __oflag, x2);
+      return (int) open.HANDLE.invokeExact(__file, __oflag, x2);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class tcdrain {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("tcdrain", DESC);
   }
 
   public static int tcdrain(int __fd) {
     try {
-      return (int) LibCHelper.downcallHandle("tcdrain", FunctionDescriptor.of(JAVA_INT, JAVA_INT)).invokeExact(__fd);
+      return (int) tcdrain.HANDLE.invokeExact(__fd);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class poll {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER, JAVA_LONG, JAVA_INT);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("poll", DESC);
   }
 
   public static int poll(MemorySegment __fds, long __nfds, int __timeout) {
     try {
-      return (int) LibCHelper
-          .downcallHandle("poll", FunctionDescriptor.of(JAVA_INT, LibCHelper.POINTER, JAVA_LONG, JAVA_INT))
-          .invokeExact(__fds, __nfds, __timeout);
+      return (int) poll.HANDLE.invokeExact(__fds, __nfds, __timeout);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
+  }
+  
+  private final static class tcsetattr {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, LibCHelper.POINTER);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("tcsetattr", DESC);
   }
 
   public static int tcsetattr(int __fd, int __optional_actions, MemorySegment __termios_p) {
     try {
-      return (int) LibCHelper
-          .downcallHandle("tcsetattr", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, LibCHelper.POINTER))
-          .invokeExact(__fd, __optional_actions, __termios_p);
+      return (int) tcsetattr.HANDLE.invokeExact(__fd, __optional_actions, __termios_p);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }
   }
+  
+  private final static class tcgetattr {
+	  final static FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER);
+	  final static MethodHandle HANDLE = LibCHelper.downcallHandle("tcgetattr", DESC);
+  }
 
   public static int tcgetattr(int __fd, MemorySegment __termios_p) {
     try {
-      return (int) LibCHelper.downcallHandle("tcgetattr", FunctionDescriptor.of(JAVA_INT, JAVA_INT, LibCHelper.POINTER))
-          .invokeExact(__fd, __termios_p);
+      return (int) tcgetattr.HANDLE.invokeExact(__fd, __termios_p);
     } catch (Throwable ex$) {
       throw new AssertionError("should not reach here", ex$);
     }

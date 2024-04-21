@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.sshtools</groupId>
     <artifactId>pty4j21</artifactId>
-    <version>0.21.0</version>
+    <version>0.21.1-SNAPSHOT</version>
     <name>Pty4J21</name>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
