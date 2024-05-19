@@ -62,11 +62,11 @@ public class NamedPipe {
     readEvent = Kernel32.CreateEvent(MemorySegment.NULL, Native.TRUE, Native.FALSE, MemorySegment.NULL);
     writeEvent = Kernel32.CreateEvent(MemorySegment.NULL, Native.TRUE, Native.FALSE, MemorySegment.NULL);
     
-    readWaitHandles = mem.allocateArray(Native.C_POINTER, 2);
+    readWaitHandles = mem.allocate(Native.C_POINTER, 2);
     readWaitHandles.setAtIndex(Native.C_POINTER, 0, readEvent);
     readWaitHandles.setAtIndex(Native.C_POINTER, 1, shutdownEvent);
     
-    writeWaitHandles = mem.allocateArray(Native.C_POINTER, 2);
+    writeWaitHandles = mem.allocate(Native.C_POINTER, 2);
     writeWaitHandles.setAtIndex(Native.C_POINTER, 0, writeEvent);
     writeWaitHandles.setAtIndex(Native.C_POINTER, 1, shutdownEvent);
   }

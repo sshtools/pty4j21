@@ -46,10 +46,10 @@ public class CygwinPtyProcess extends PtyProcess {
     String errPipeName = pipePrefix + "err";
 
     try(Arena mem = Arena.ofConfined()) {
-	    myInputHandle = Kernel32.CreateNamedPipeA(mem.allocateUtf8String(inPipeName), PIPE_ACCESS_OUTBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL);
-	    myOutputHandle = Kernel32.CreateNamedPipeA(mem.allocateUtf8String(outPipeName), PIPE_ACCESS_INBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL);
+	    myInputHandle = Kernel32.CreateNamedPipeA(mem.allocateFrom(inPipeName), PIPE_ACCESS_OUTBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL);
+	    myOutputHandle = Kernel32.CreateNamedPipeA(mem.allocateFrom(outPipeName), PIPE_ACCESS_INBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL);
 	    myErrorHandle =
-	      console ? Kernel32.CreateNamedPipeA(mem.allocateUtf8String(errPipeName), PIPE_ACCESS_INBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL) : null;
+	      console ? Kernel32.CreateNamedPipeA(mem.allocateFrom(errPipeName), PIPE_ACCESS_INBOUND | Kernel32.FILE_FLAG_OVERLAPPED, 0, 1, 0, 0, 0, MemorySegment.NULL) : null;
 	
 	    if (myInputHandle.equals(Kernel32.INVALID_HANDLE_VALUE) ||
 	        myOutputHandle.equals(Kernel32.INVALID_HANDLE_VALUE) ||

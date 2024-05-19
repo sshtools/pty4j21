@@ -345,7 +345,7 @@ public class Native {
 	public static MemorySegment toCString(SegmentAllocator allocator, String s, Charset charset) {
 	    // "==" is OK here as StandardCharsets.UTF_8 == Charset.forName("UTF8")
 	    if (StandardCharsets.UTF_8 == charset)
-	        return allocator.allocateUtf8String(s);
+	        return allocator.allocateFrom(s);
 
 	    // else if (StandardCharsets.UTF_16LE == charset) {
 	    //     return Holger answer
@@ -353,7 +353,7 @@ public class Native {
 
 	    // For MB charsets it is safer to append terminator '\0' and let JDK append
 	    // appropriate byte[] null termination (typically 1,2,4 bytes) to the segment
-	    return allocator.allocateArray(ValueLayout.JAVA_BYTE, (s+"\0").getBytes(charset));
+	    return allocator.allocateFrom(ValueLayout.JAVA_BYTE, (s+"\0").getBytes(charset));
 	}
 
 	public static String toJavaString(MemorySegment wide) {
@@ -367,7 +367,7 @@ public class Native {
 		// JDK Panama only handles UTF-8, it does strlen() scan for 0 in the segment
 		// which is valid as all code points of 2 and 3 bytes lead with high bit "1".
 		if (StandardCharsets.UTF_8 == charset)
-			return segment.getUtf8String(0);
+			return segment.getString(0);
 
 		// if (StandardCharsets.UTF_16LE == charset) {
 		// return Holger answer

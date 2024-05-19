@@ -22,15 +22,12 @@ package com.pty4j.unix.linux;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 
 import com.pty4j.unix.LibC;
 import com.pty4j.unix.LibUtil;
 import com.pty4j.unix.PtyHelpers;
-import com.pty4j.unix.PtyHelpers.FDSet;
 
 /**
  * Provides a {@link com.pty4j.unix.PtyHelpers.OSFacade} implementation for Linux.
@@ -66,7 +63,7 @@ public class OSFacadeImpl implements PtyHelpers.OSFacade {
   @Override
   public int getpt() {
     try (var offHeap = Arena.ofConfined()) {
-	  return LibC.open(Arena.global().allocateUtf8String("/dev/ptmx"), LibC.O_RDWR | LibC.O_NOCTTY);
+	  return LibC.open(Arena.global().allocateFrom("/dev/ptmx"), LibC.O_RDWR | LibC.O_NOCTTY);
     }
   }
 

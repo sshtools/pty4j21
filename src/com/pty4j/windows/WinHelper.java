@@ -23,12 +23,12 @@ public final class WinHelper {
 					.downcallHandle("getCurrentDirectory",
 							FunctionDescriptor.of(LibCHelper.POINTER, JAVA_LONG, ADDRESS))
 					.invokeExact(processId, errorMessagePtr);
-			var err = errorMessagePtr.getUtf8String(0);
+			var err = errorMessagePtr.getString(0);
 			if (currentDirectory != null) {
 				if (err.length() > 0) {
 					throw new IOException("Unexpected error message: " + err);
 				}
-				return currentDirectory.getUtf8String(0);
+				return currentDirectory.getString(0);
 			}
 			if (err.length() == 0) {
 				throw new IOException("getCurrentDirectory failed without error message");

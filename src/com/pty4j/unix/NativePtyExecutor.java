@@ -1,10 +1,8 @@
 package com.pty4j.unix;
 
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.MemoryLayout.PathElement.groupElement;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
-import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
-import java.lang.foreign.AddressLayout;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.GroupLayout;
@@ -12,13 +10,13 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
-import java.lang.foreign.StructLayout;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
+import java.lang.foreign.ValueLayout.OfShort;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.invoke.VarHandle;
+import java.util.function.Consumer;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -41,25 +39,24 @@ class NativePtyExecutor implements PtyExecutor {
   public int execPty(String full_path, String[] argv, String[] envp, String dirpath, String pts_name, int fdm,
                      String err_pts_name, int err_fdm, boolean console) {
     try (var offHeap = Arena.ofConfined()) {
-      /* TODO not a scooby doo if this works or not */
-      var argvMem = offHeap.allocateArray( LibCHelper.POINTER, argv.length + 1); 
+      var argvMem = offHeap.allocate( LibCHelper.POINTER, argv.length + 1); 
       for(int i = 0 ; i < argv.length; i++) {
-        argvMem.setAtIndex(LibCHelper.POINTER, i, offHeap.allocateUtf8String(argv[i]));
+        argvMem.setAtIndex(LibCHelper.POINTER, i, offHeap.allocateFrom(argv[i]));
       }
       argvMem.setAtIndex(LibCHelper.POINTER, argv.length, MemorySegment.NULL);
 
-      var envpMem = offHeap.allocateArray( LibCHelper.POINTER, envp.length+ 1); 
+      var envpMem = offHeap.allocate( LibCHelper.POINTER, envp.length+ 1); 
       for(int i = 0 ; i < envp.length; i++) {
-        envpMem.setAtIndex(LibCHelper.POINTER, i, offHeap.allocateUtf8String(envp[i]));
+        envpMem.setAtIndex(LibCHelper.POINTER, i, offHeap.allocateFrom(envp[i]));
       }
       envpMem.setAtIndex(LibCHelper.POINTER, envp.length, MemorySegment.NULL);
       
-      return LibPty.exec_pty(offHeap.allocateUtf8String(full_path), 
+      return LibPty.exec_pty(offHeap.allocateFrom(full_path), 
                              argvMem, envpMem, 
-                             offHeap.allocateUtf8String(dirpath), 
-                             offHeap.allocateUtf8String(pts_name), 
+                             offHeap.allocateFrom(dirpath), 
+                             offHeap.allocateFrom(pts_name), 
                              fdm, 
-                             offHeap.allocateUtf8String(err_pts_name == null ? "" : err_pts_name)
+                             offHeap.allocateFrom(err_pts_name == null ? "" : err_pts_name)
                              , err_fdm, console ? 1 : 0);
     }
   }
@@ -79,7 +76,7 @@ class NativePtyExecutor implements PtyExecutor {
             " fd=" + fd + (LibPty.is_valid_fd(fd) > 0 ? "(valid)" : "(invalid)") +
             ", " + getErrorInfo(errno, process), errno);
         }
-        return new WinSize(winsize.ws_col$get(ws), winsize.ws_row$get(ws));
+        return new WinSize(winsize.ws_col(ws), winsize.ws_row(ws));
       }
   }
 
@@ -87,8 +84,8 @@ class NativePtyExecutor implements PtyExecutor {
   public void setWindowSize(int fd, @NotNull WinSize winSize, @Nullable PtyProcess process) throws UnixPtyException {
     try (var offHeap = Arena.ofConfined()) {
       var ws = winsize.allocate(offHeap);
-      winsize.ws_col$set(ws, winSize.ws_col);
-      winsize.ws_row$set(ws, winSize.ws_row);
+      winsize.ws_col(ws, (short)winSize.getColumns());
+      winsize.ws_row(ws, (short)winSize.getRows());
       var errno = LibPty.set_window_size(fd, ws);
       if (errno != 0) {
         boolean validFd = LibPty.is_valid_fd(fd) > 0;
@@ -180,7 +177,6 @@ class NativePtyExecutor implements PtyExecutor {
     private static final SegmentAllocator THROWING_ALLOCATOR = (x, y) -> {
       throw new AssertionError("should not reach here");
     };
-    static final AddressLayout POINTER = ValueLayout.ADDRESS.withTargetLayout(MemoryLayout.sequenceLayout(JAVA_BYTE));
 
     final static SegmentAllocator CONSTANT_ALLOCATOR = (size, align) -> Arena.ofAuto().allocate(size, align);
 
@@ -240,11 +236,11 @@ class NativePtyExecutor implements PtyExecutor {
     // Internals only below this point
 
     private static final class VarargsInvoker {
-      private static final MethodHandle INVOKE_MH;
+      private static final MethodHandle INVOKE_MH = makeHandle(); /* Weird compiler error */
 
-      static {
+      static MethodHandle makeHandle() {
         try {
-          INVOKE_MH = MethodHandles.lookup().findVirtual(VarargsInvoker.class, "invoke",
+          return MethodHandles.lookup().findVirtual(VarargsInvoker.class, "invoke",
               MethodType.methodType(Object.class, SegmentAllocator.class, Object[].class));
         } catch (ReflectiveOperationException e) {
           throw new RuntimeException(e);
@@ -285,167 +281,245 @@ class NativePtyExecutor implements PtyExecutor {
 
   public class winsize {
 
-    final class constants$0 {
+	    winsize() {
+	        // Should not be called directly
+	    }
 
-      // Suppresses default constructor, ensuring non-instantiability.
-      private constants$0() {
-      }
+	    private static final GroupLayout $LAYOUT = MemoryLayout.structLayout(
+	        ValueLayout.JAVA_SHORT.withName("ws_row"),
+	        ValueLayout.JAVA_SHORT.withName("ws_col"),
+	        ValueLayout.JAVA_SHORT.withName("ws_xpixel"),
+	        ValueLayout.JAVA_SHORT.withName("ws_ypixel")
+	    ).withName("winsize");
 
-      static final StructLayout const$0 = MemoryLayout.structLayout(JAVA_SHORT.withName("ws_row"),
-          JAVA_SHORT.withName("ws_col"), JAVA_SHORT.withName("ws_xpixel"), JAVA_SHORT.withName("ws_ypixel"))
-          .withName("winsize");
-      static final VarHandle const$1 = constants$0.const$0.varHandle(MemoryLayout.PathElement.groupElement("ws_row"));
-      static final VarHandle const$2 = constants$0.const$0.varHandle(MemoryLayout.PathElement.groupElement("ws_col"));
-      static final VarHandle const$3 = constants$0.const$0
-          .varHandle(MemoryLayout.PathElement.groupElement("ws_xpixel"));
-      static final VarHandle const$4 = constants$0.const$0
-          .varHandle(MemoryLayout.PathElement.groupElement("ws_ypixel"));
-      static final StructLayout const$5 = MemoryLayout
-          .structLayout(JAVA_SHORT.withName("c_iflag"), JAVA_SHORT.withName("c_oflag"), JAVA_SHORT.withName("c_cflag"),
-              JAVA_SHORT.withName("c_lflag"), JAVA_BYTE.withName("c_line"),
-              MemoryLayout.sequenceLayout(8, JAVA_BYTE).withName("c_cc"), MemoryLayout.paddingLayout(1))
-          .withName("termio");
-    }
+	    /**
+	     * The layout of this struct
+	     */
+	    public static final GroupLayout layout() {
+	        return $LAYOUT;
+	    }
 
-    public static MemoryLayout $LAYOUT() {
-      return constants$0.const$0;
-    }
+	    private static final OfShort ws_row$LAYOUT = (OfShort)$LAYOUT.select(groupElement("ws_row"));
 
-    public static VarHandle ws_row$VH() {
-      return constants$0.const$1;
-    }
+	    /**
+	     * Layout for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_row
+	     * }
+	     */
+	    public static final OfShort ws_row$layout() {
+	        return ws_row$LAYOUT;
+	    }
 
-    /**
-     * Getter for field:
-     * {@snippet : * unsigned short ws_row;
-     * }
-     */
-    public static short ws_row$get(MemorySegment seg) {
-      return (short) constants$0.const$1.get(seg);
-    }
+	    private static final long ws_row$OFFSET = 0;
 
-    /**
-     * Setter for field:
-     * {@snippet : * unsigned short ws_row;
-     * }
-     */
-    public static void ws_row$set(MemorySegment seg, short x) {
-      constants$0.const$1.set(seg, x);
-    }
+	    /**
+	     * Offset for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_row
+	     * }
+	     */
+	    public static final long ws_row$offset() {
+	        return ws_row$OFFSET;
+	    }
 
-    public static short ws_row$get(MemorySegment seg, long index) {
-      return (short) constants$0.const$1.get(seg.asSlice(index * sizeof()));
-    }
+	    /**
+	     * Getter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_row
+	     * }
+	     */
+	    public static short ws_row(MemorySegment struct) {
+	        return struct.get(ws_row$LAYOUT, ws_row$OFFSET);
+	    }
 
-    public static void ws_row$set(MemorySegment seg, long index, short x) {
-      constants$0.const$1.set(seg.asSlice(index * sizeof()), x);
-    }
+	    /**
+	     * Setter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_row
+	     * }
+	     */
+	    public static void ws_row(MemorySegment struct, short fieldValue) {
+	        struct.set(ws_row$LAYOUT, ws_row$OFFSET, fieldValue);
+	    }
 
-    public static VarHandle ws_col$VH() {
-      return constants$0.const$2;
-    }
+	    private static final OfShort ws_col$LAYOUT = (OfShort)$LAYOUT.select(groupElement("ws_col"));
 
-    /**
-     * Getter for field:
-     * {@snippet : * unsigned short ws_col;
-     * }
-     */
-    public static short ws_col$get(MemorySegment seg) {
-      return (short) constants$0.const$2.get(seg);
-    }
+	    /**
+	     * Layout for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_col
+	     * }
+	     */
+	    public static final OfShort ws_col$layout() {
+	        return ws_col$LAYOUT;
+	    }
 
-    /**
-     * Setter for field:
-     * {@snippet : * unsigned short ws_col;
-     * }
-     */
-    public static void ws_col$set(MemorySegment seg, short x) {
-      constants$0.const$2.set(seg, x);
-    }
+	    private static final long ws_col$OFFSET = 2;
 
-    public static short ws_col$get(MemorySegment seg, long index) {
-      return (short) constants$0.const$2.get(seg.asSlice(index * sizeof()));
-    }
+	    /**
+	     * Offset for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_col
+	     * }
+	     */
+	    public static final long ws_col$offset() {
+	        return ws_col$OFFSET;
+	    }
 
-    public static void ws_col$set(MemorySegment seg, long index, short x) {
-      constants$0.const$2.set(seg.asSlice(index * sizeof()), x);
-    }
+	    /**
+	     * Getter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_col
+	     * }
+	     */
+	    public static short ws_col(MemorySegment struct) {
+	        return struct.get(ws_col$LAYOUT, ws_col$OFFSET);
+	    }
 
-    public static VarHandle ws_xpixel$VH() {
-      return constants$0.const$3;
-    }
+	    /**
+	     * Setter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_col
+	     * }
+	     */
+	    public static void ws_col(MemorySegment struct, short fieldValue) {
+	        struct.set(ws_col$LAYOUT, ws_col$OFFSET, fieldValue);
+	    }
 
-    /**
-     * Getter for field:
-     * {@snippet : * unsigned short ws_xpixel;
-     * }
-     */
-    public static short ws_xpixel$get(MemorySegment seg) {
-      return (short) constants$0.const$3.get(seg);
-    }
+	    private static final OfShort ws_xpixel$LAYOUT = (OfShort)$LAYOUT.select(groupElement("ws_xpixel"));
 
-    /**
-     * Setter for field:
-     * {@snippet : * unsigned short ws_xpixel;
-     * }
-     */
-    public static void ws_xpixel$set(MemorySegment seg, short x) {
-      constants$0.const$3.set(seg, x);
-    }
+	    /**
+	     * Layout for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_xpixel
+	     * }
+	     */
+	    public static final OfShort ws_xpixel$layout() {
+	        return ws_xpixel$LAYOUT;
+	    }
 
-    public static short ws_xpixel$get(MemorySegment seg, long index) {
-      return (short) constants$0.const$3.get(seg.asSlice(index * sizeof()));
-    }
+	    private static final long ws_xpixel$OFFSET = 4;
 
-    public static void ws_xpixel$set(MemorySegment seg, long index, short x) {
-      constants$0.const$3.set(seg.asSlice(index * sizeof()), x);
-    }
+	    /**
+	     * Offset for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_xpixel
+	     * }
+	     */
+	    public static final long ws_xpixel$offset() {
+	        return ws_xpixel$OFFSET;
+	    }
 
-    public static VarHandle ws_ypixel$VH() {
-      return constants$0.const$4;
-    }
+	    /**
+	     * Getter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_xpixel
+	     * }
+	     */
+	    public static short ws_xpixel(MemorySegment struct) {
+	        return struct.get(ws_xpixel$LAYOUT, ws_xpixel$OFFSET);
+	    }
 
-    /**
-     * Getter for field:
-     * {@snippet : * unsigned short ws_ypixel;
-     * }
-     */
-    public static short ws_ypixel$get(MemorySegment seg) {
-      return (short) constants$0.const$4.get(seg);
-    }
+	    /**
+	     * Setter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_xpixel
+	     * }
+	     */
+	    public static void ws_xpixel(MemorySegment struct, short fieldValue) {
+	        struct.set(ws_xpixel$LAYOUT, ws_xpixel$OFFSET, fieldValue);
+	    }
 
-    /**
-     * Setter for field:
-     * {@snippet : * unsigned short ws_ypixel;
-     * }
-     */
-    public static void ws_ypixel$set(MemorySegment seg, short x) {
-      constants$0.const$4.set(seg, x);
-    }
+	    private static final OfShort ws_ypixel$LAYOUT = (OfShort)$LAYOUT.select(groupElement("ws_ypixel"));
 
-    public static short ws_ypixel$get(MemorySegment seg, long index) {
-      return (short) constants$0.const$4.get(seg.asSlice(index * sizeof()));
-    }
+	    /**
+	     * Layout for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_ypixel
+	     * }
+	     */
+	    public static final OfShort ws_ypixel$layout() {
+	        return ws_ypixel$LAYOUT;
+	    }
 
-    public static void ws_ypixel$set(MemorySegment seg, long index, short x) {
-      constants$0.const$4.set(seg.asSlice(index * sizeof()), x);
-    }
+	    private static final long ws_ypixel$OFFSET = 6;
 
-    public static long sizeof() {
-      return $LAYOUT().byteSize();
-    }
+	    /**
+	     * Offset for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_ypixel
+	     * }
+	     */
+	    public static final long ws_ypixel$offset() {
+	        return ws_ypixel$OFFSET;
+	    }
 
-    public static MemorySegment allocate(SegmentAllocator allocator) {
-      return allocator.allocate($LAYOUT());
-    }
+	    /**
+	     * Getter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_ypixel
+	     * }
+	     */
+	    public static short ws_ypixel(MemorySegment struct) {
+	        return struct.get(ws_ypixel$LAYOUT, ws_ypixel$OFFSET);
+	    }
 
-    public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
-      return allocator.allocate(MemoryLayout.sequenceLayout(len, $LAYOUT()));
-    }
+	    /**
+	     * Setter for field:
+	     * {@snippet lang=c :
+	     * unsigned short ws_ypixel
+	     * }
+	     */
+	    public static void ws_ypixel(MemorySegment struct, short fieldValue) {
+	        struct.set(ws_ypixel$LAYOUT, ws_ypixel$OFFSET, fieldValue);
+	    }
 
-    public static MemorySegment ofAddress(MemorySegment addr, Arena arena) {
-      return LibPtyHelper.asArray(addr, $LAYOUT(), 1, arena);
-    }
-  }
+	    /**
+	     * Obtains a slice of {@code arrayParam} which selects the array element at {@code index}.
+	     * The returned segment has address {@code arrayParam.address() + index * layout().byteSize()}
+	     */
+	    public static MemorySegment asSlice(MemorySegment array, long index) {
+	        return array.asSlice(layout().byteSize() * index);
+	    }
+
+	    /**
+	     * The size (in bytes) of this struct
+	     */
+	    public static long sizeof() { return layout().byteSize(); }
+
+	    /**
+	     * Allocate a segment of size {@code layout().byteSize()} using {@code allocator}
+	     */
+	    public static MemorySegment allocate(SegmentAllocator allocator) {
+	        return allocator.allocate(layout());
+	    }
+
+	    /**
+	     * Allocate an array of size {@code elementCount} using {@code allocator}.
+	     * The returned segment has size {@code elementCount * layout().byteSize()}.
+	     */
+	    public static MemorySegment allocateArray(long elementCount, SegmentAllocator allocator) {
+	        return allocator.allocate(MemoryLayout.sequenceLayout(elementCount, layout()));
+	    }
+
+	    /**
+	     * Reinterprets {@code addr} using target {@code arena} and {@code cleanupAction} (if any).
+	     * The returned segment has size {@code layout().byteSize()}
+	     */
+	    public static MemorySegment reinterpret(MemorySegment addr, Arena arena, Consumer<MemorySegment> cleanup) {
+	        return reinterpret(addr, 1, arena, cleanup);
+	    }
+
+	    /**
+	     * Reinterprets {@code addr} using target {@code arena} and {@code cleanupAction} (if any).
+	     * The returned segment has size {@code elementCount * layout().byteSize()}
+	     */
+	    public static MemorySegment reinterpret(MemorySegment addr, long elementCount, Arena arena, Consumer<MemorySegment> cleanup) {
+	        return addr.reinterpret(layout().byteSize() * elementCount, arena, cleanup);
+	    }
+	}
+
+
 
 }
