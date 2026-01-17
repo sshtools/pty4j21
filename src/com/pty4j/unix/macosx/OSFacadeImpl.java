@@ -24,11 +24,9 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
-import java.lang.foreign.SegmentAllocator;
 
 import com.pty4j.unix.LibC;
 import com.pty4j.unix.PtyHelpers;
-import com.pty4j.unix.PtyHelpers.FDSet;
 
 /**
  * Provides a {@link com.pty4j.unix.PtyHelpers.OSFacade} implementation for MacOSX.
@@ -71,7 +69,7 @@ public class OSFacadeImpl implements PtyHelpers.OSFacade {
   @Override
   public int getpt() {
 	try (var offHeap = Arena.ofConfined()) {
-	  return LibC.open(offHeap.allocateUtf8String("/dev/ptmx"), LibC.O_RDWR | LibC.O_NOCTTY);
+	  return LibC.open(offHeap.allocateFrom("/dev/ptmx"), LibC.O_RDWR | LibC.O_NOCTTY);
 	}
   }
 

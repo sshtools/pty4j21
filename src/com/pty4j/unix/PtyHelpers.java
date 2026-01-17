@@ -27,10 +27,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.ValueLayout;
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -86,7 +83,7 @@ public class PtyHelpers {
      */
     default int waitpid(int pid, int[] stat, int options) {
       try (var offHeap = Arena.ofConfined()) {
-          return LibC.waitpid(pid, offHeap.allocateArray(ValueLayout.JAVA_INT, stat), options);
+          return LibC.waitpid(pid, offHeap.allocateFrom(ValueLayout.JAVA_INT, stat), options);
       }
     }
 
@@ -102,7 +99,7 @@ public class PtyHelpers {
     }
     
     default String strerror(int errno) {
-      return LibC.strerror(errno).getUtf8String(0);
+      return LibC.strerror(errno).getString(0);
     }
 
     int getpt(); //getpt
@@ -124,7 +121,7 @@ public class PtyHelpers {
       if(seg.equals(MemorySegment.NULL))
     	  return null;
       else
-    	  return seg.getUtf8String(0);
+    	  return seg.getString(0);
     }
 
     default int killpg(int pid, int sig) {
@@ -137,7 +134,7 @@ public class PtyHelpers {
 
     default int pipe(int[] pipe2) {
       try (var offHeap = Arena.ofConfined()) {
-        var arr = offHeap.allocateArray(ValueLayout.JAVA_INT, pipe2);
+        var arr = offHeap.allocateFrom(ValueLayout.JAVA_INT, pipe2);
         var res = LibC.pipe(arr);
         if(res == 0) {
           var ret = arr.toArray(ValueLayout.JAVA_INT);
@@ -169,7 +166,7 @@ public class PtyHelpers {
 
     default void unsetenv(String s) {
       try (var offHeap = Arena.ofConfined()) {  
-      	LibC.unsetenv(offHeap.allocateUtf8String(s));
+      	LibC.unsetenv(offHeap.allocateFrom(s));
       }
     }
 
@@ -177,7 +174,7 @@ public class PtyHelpers {
 
     default void chdir(String dirpath) {
       try (var offHeap = Arena.ofConfined()) {
-      	LibC.chdir(offHeap.allocateUtf8String(dirpath));
+      	LibC.chdir(offHeap.allocateFrom(dirpath));
       }
     }
 
@@ -187,7 +184,7 @@ public class PtyHelpers {
 
     default int open(String path, int mode) {
       try (var offHeap = Arena.ofConfined()) {
-        return LibC.open(offHeap.allocateUtf8String(path), mode);
+        return LibC.open(offHeap.allocateFrom(path), mode);
       }
     }
 
@@ -208,7 +205,7 @@ public class PtyHelpers {
 
     default int write(int fd, byte[] buffer, int len) {
         try (var offHeap = Arena.ofConfined()) {
-          return LibC.write(fd, offHeap.allocateArray(ValueLayout.JAVA_BYTE, buffer), len);
+          return LibC.write(fd, offHeap.allocateFrom(ValueLayout.JAVA_BYTE, buffer), len);
         }
     }
 
@@ -233,8 +230,9 @@ public class PtyHelpers {
         var capturedState = offHeap.allocate(LibCHelper.capturedStateLayout);
         var pollfds = pollfd.allocateArray(fds.length, offHeap);
         for(int i = 0 ; i < fds.length; i++) {
-      	  pollfd.fd$set(pollfds, i, fds[i]);
-          pollfd.events$set(pollfds, i, events[i]);
+          var pfd = pollfd.asSlice(pollfds, i);
+      	  pollfd.fd(pfd, fds[i]);
+          pollfd.events(pfd, events[i]);
         }
   	    var res = LibC.poll(pollfds, nfds, timeout);
   	    if(res < 1) {
@@ -242,9 +240,10 @@ public class PtyHelpers {
 		  errno.set(errnoVal);
   	    }
   	    else {
-          for(int i = 0 ; i < fds.length; i++) {
-            events[i] = pollfd.revents$get(pollfds, i);
-          }
+            for(int i = 0 ; i < fds.length; i++) {
+              var fd = pollfd.asSlice(pollfds, i);
+              events[i] = pollfd.revents(fd);
+            }
   	    }
   	    return res;
       }

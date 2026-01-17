@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.sshtools</groupId>
     <artifactId>pty4j21</artifactId>
-    <version>0.21.1-SNAPSHOT</version>
+    <version>0.22.0</version>
     <name>Pty4J21</name>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -26,7 +26,7 @@
     </organization>
     <inceptionYear>2023</inceptionYear>
     <url>https://github.com/brett-smith/pty4j</url>
-    <description>Java 21 fork of Pty4J
+    <description>Java 21 and Java 22+ fork of Pty4J
     </description>
     <licenses>
         <license>
@@ -35,16 +35,6 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
-    <distributionManagement>
-        <snapshotRepository>
-            <id>ossrh-sshtools</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </snapshotRepository>
-        <repository>
-            <id>ossrh-sshtools</id>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
-    </distributionManagement>
     <scm>
         <url>https://github.com/brett-smith/pty4j</url>
         <connection>scm:git:https://github.com/brett-smith/pty4j.git</connection>
@@ -101,9 +91,8 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
-					<release>21</release>
-					<testRelease>21</testRelease>
-					<enablePreview>true</enablePreview>
+					<release>22</release>
+					<testRelease>22</testRelease>
 				</configuration>
 			</plugin>
 			
@@ -111,7 +100,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>--enable-preview --enable-native-access=com.sshtools.pty4j</argLine>
+                    <argLine>--enable-native-access=com.sshtools.pty4j</argLine>
                 </configuration>
             </plugin>
 			
@@ -142,6 +131,16 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
+            </plugin>
+            
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <configuration>
+                    <autoPublish>true</autoPublish>
+                    <waitUntil>published</waitUntil>
+                    <publishingServerId>central-sshtools</publishingServerId>
+                </configuration>
             </plugin>
         </plugins>
         <pluginManagement>
@@ -175,7 +174,16 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-source-plugin</artifactId>
                     <version>3.1.0</version>
-                </plugin>
+					<executions>
+						<execution>
+							<id>attach-sources</id>
+							<goals>
+								<goal>jar-no-fork</goal>
+							</goals>
+							<phase>package</phase>
+						</execution>
+					</executions>
+				</plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-site-plugin</artifactId>
@@ -205,10 +213,9 @@
                         </execution>
                     </executions>
                     <configuration>
-                        <additionalOptions>--enable-preview</additionalOptions>
                         <encoding>UTF-8</encoding>
                         <detectJavaApiLink>false</detectJavaApiLink>
-                        <source>21</source>
+                        <source>22</source>
                         <doclint>none</doclint>
                         <sourcepath>src</sourcepath>
                         <includeDependencySources>false</includeDependencySources>
@@ -229,15 +236,10 @@
                     </executions>
                 </plugin>
                 <plugin>
-                    <groupId>org.sonatype.plugins</groupId>
-                    <artifactId>nexus-staging-maven-plugin</artifactId>
-                    <version>1.6.13</version>
+                    <groupId>org.sonatype.central</groupId>
+                    <artifactId>central-publishing-maven-plugin</artifactId>
+                    <version>0.8.0</version> 
                     <extensions>true</extensions>
-                    <configuration>
-                        <serverId>ossrh-sshtools</serverId>
-                        <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-                        <autoReleaseAfterClose>true</autoReleaseAfterClose>
-                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -267,8 +269,8 @@
                         </executions>
                     </plugin>
                     <plugin>
-                        <groupId>org.sonatype.plugins</groupId>
-                        <artifactId>nexus-staging-maven-plugin</artifactId>
+		                <groupId>org.sonatype.central</groupId>
+		                <artifactId>central-publishing-maven-plugin</artifactId>
                     </plugin>
                 </plugins>
             </build>
