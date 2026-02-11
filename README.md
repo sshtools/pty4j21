@@ -51,7 +51,7 @@ Adjust version accordinglty
 <dependency>
   <groupId>com.sshtools</groupId>
   <artifactId>pty4j21</artifactId>
-  <version>0.22.0-SNAPSHOT</version>
+  <version>0.22.1</version>
 </dependency>
 ```
 
@@ -59,7 +59,7 @@ Adjust version accordinglty
 
 ```groovy
 dependencies {
-  implementation 'com.sshtools:pty4j:0.22.0'
+  implementation 'com.sshtools:pty4j:0.22.1'
 }
 ```
 

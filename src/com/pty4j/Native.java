@@ -393,7 +393,10 @@ public class Native {
 
 	/** Convert Java String to Windows Wide String format */
 	public static MemorySegment toWideString(String s, SegmentAllocator allocator) {
-	    return toCString(allocator, s, StandardCharsets.UTF_16LE);
+		if(s == null)
+			return MemorySegment.NULL;
+		else
+			return toCString(allocator, s, StandardCharsets.UTF_16LE);
 	}
 
     /** Similar to {@link System#mapLibraryName}, except that it maps to
