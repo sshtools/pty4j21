@@ -70,6 +70,9 @@ class WinHandleInputStream extends PtyInputStream {
 	        // the function returns FALSE and GetLastError returns ERROR_BROKEN_PIPE.
 	        return -1;
 	      }
+	      if(lastError == 0) {
+	    	  return -1;
+	      }
 	      throw new LastErrorExceptionEx("ReadFile stdin", lastError);
 	    }
 	    int bytesRead = lpNumberOfBytesRead.get(ValueLayout.JAVA_INT, 0);
