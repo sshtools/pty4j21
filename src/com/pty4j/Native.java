@@ -34,6 +34,7 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.Arena;
+import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
@@ -185,6 +186,9 @@ public class Native {
 	}
 	
 	public static SymbolLookup load(final String libraryName, Arena arena) {
+		if(libraryName.equals("c") && !Platform.isWindows() && !Platform.isMac()) {
+			return Linker.nativeLinker().defaultLookup();
+		}
         LOG.log(Level.DEBUG, "Looking for library '" + libraryName + "'");
 
         List<Throwable> exceptions = new ArrayList<>();
